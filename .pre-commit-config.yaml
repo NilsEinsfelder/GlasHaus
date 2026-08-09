@@ -11,6 +11,12 @@ repos:
     rev: v0.16.2
     hooks:
       - id: ruff-check
-        args:
-          - --fix
       - id: ruff-format
+
+  - repo: local
+    hooks:
+      - id: mypy
+        name: mypy
+        entry: python -m mypy backend/app
+        language: system
+        pass_filenames: false
