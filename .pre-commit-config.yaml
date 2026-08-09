@@ -1,0 +1,16 @@
+# Pre-commit configuration for the GlasHaus project.
+#
+# This file defines the local quality gates that must pass before
+# changes can be committed to the repository.
+
+default_language_version:
+  python: python3.14
+
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.2
+    hooks:
+      - id: ruff-check
+        args:
+          - --fix
+      - id: ruff-format
