@@ -20,3 +20,9 @@ repos:
         entry: python -m mypy backend/app
         language: system
         pass_filenames: false
+
+      - id: pytest-unit
+        name: pytest unit
+        entry: pytest backend/tests/unit
+        language: system
+        pass_filenames: false
