@@ -948,3 +948,625 @@ The synchronization architecture is considered established when:
 - the security boundary between client and server is explicit.
 
 Only after these conditions are satisfied should the corresponding persistence and synchronization implementation be considered complete.
+
+
+## 0.7.6 Synchronization Architecture
+
+### 0.7.6.1 General Principle
+
+GlasHaus uses an offline-first synchronization architecture.
+
+The local application state is authoritative for the user's immediate work while the device is offline.
+
+Server synchronization is asynchronous and must never be a prerequisite for normal application use.
+
+The application MUST remain usable while:
+
+- synchronization is unavailable,
+- synchronization is in progress,
+- individual operations are retrying,
+- individual operations are in conflict,
+- a full resynchronization is required.
+
+Synchronization state is presented to the user as status information, not as a blocking workflow.
+
+---
+
+### 0.7.6.2 Background Synchronization
+
+Synchronization runs as a background process independent of the main application workflow.
+
+The user MUST be able to:
+
+- open and use the application,
+- create new entities,
+- edit existing locally available entities,
+- create protocols,
+- add photos,
+- capture signatures,
+- create offers,
+- create calendar requests,
+- navigate between screens,
+
+while synchronization is running.
+
+A synchronization attempt MUST NOT block normal interaction with the application.
+
+The UI MAY display synchronization state such as:
+
+- Offline
+- Synchronizing
+- Up to date
+- Pending changes
+- Conflict requires attention
+- Resynchronization required
+- Synchronization error
+
+These states are informational.
+
+They MUST NOT prevent normal offline-capable operations unless the requested operation explicitly requires data or authorization that is unavailable locally.
+
+---
+
+### 0.7.6.3 Server Change Feed
+
+The server provides a persistent change feed.
+
+Every server-side mutation that is relevant to synchronization receives a monotonically increasing `change_sequence`.
+
+The change sequence belongs to the synchronization feed and MUST NOT be stored as part of the domain entity itself.
+
+Conceptually:
+
+    ChangeFeedEntry
+    ----------------------------
+    change_sequence
+    change_id
+    entity_type
+    entity_global_id
+    entity_version
+    operation_type
+    server_created_at
+    server_updated_at
+    server_deleted_at
+    snapshot
+
+Entity versions and change sequences have different meanings.
+
+`entity_version` identifies the version of an individual entity.
+
+`change_sequence` identifies a position in the server-wide synchronization feed.
+
+---
+
+### 0.7.6.4 Client Synchronization Cursor
+
+Each device maintains a persistent synchronization cursor.
+
+The cursor represents the highest server change sequence that has been successfully applied to local persistent storage.
+
+The cursor MUST only be advanced in the same local transaction as the corresponding changes.
+
+Conceptually:
+
+    BEGIN
+
+    apply changes
+
+    update sync_cursor
+
+    COMMIT
+
+If the application terminates before the transaction commits, the cursor MUST remain at its previous value.
+
+This guarantees that changes may be delivered more than once without being lost.
+
+---
+
+### 0.7.6.5 Pull Synchronization
+
+The client requests changes after its current cursor.
+
+Conceptually:
+
+    POST /api/v1/sync/pull
+
+    {
+        "device_id": "...",
+        "cursor": 18472,
+        "limit": 500
+    }
+
+The server returns an ordered batch of changes.
+
+The client applies changes in ascending `change_sequence` order.
+
+A successful batch is persisted atomically together with the new cursor.
+
+The server MAY return multiple batches using `has_more`.
+
+Large synchronization backlogs MUST NOT block the application.
+
+The synchronization engine processes such batches incrementally in the background.
+
+---
+
+### 0.7.6.6 Push Synchronization
+
+Local mutations are persisted in an Outbox before synchronization.
+
+Conceptually:
+
+    Local mutation
+          |
+          v
+       Database
+       /       \
+    Entity     Outbox
+                 |
+                 v
+          Background Sync
+                 |
+                 v
+               Server
+
+A push request contains one or more operations.
+
+Conceptually:
+
+    POST /api/v1/sync/push
+
+Each operation contains at least:
+
+- `operation_id`
+- `entity_type`
+- `entity_local_id`
+- `entity_global_id`
+- `operation_type`
+- `base_version`
+- `snapshot`
+
+A newly created offline entity has:
+
+    entity_global_id = null
+    base_version = 0
+
+The server creates the `global_id` after successful synchronization.
+
+The client MUST persist the returned server identity and version locally before marking the operation as synchronized.
+
+---
+
+### 0.7.6.7 Idempotency
+
+Every local mutation has a persistent `operation_id`.
+
+The server MUST treat `operation_id` as an idempotency key.
+
+If a client does not receive the response because of a network failure, it MAY safely retry the same operation.
+
+If the server has already processed the operation, it MUST return the previously established result rather than execute the mutation again.
+
+This protects against:
+
+- network timeouts,
+- lost responses,
+- application crashes,
+- device restarts,
+- repeated synchronization attempts.
+
+The system guarantees at-least-once delivery with idempotent processing rather than relying on exactly-once network delivery.
+
+---
+
+### 0.7.6.8 Outbox State Machine
+
+Each Outbox operation follows an explicit state machine.
+
+    pending
+       |
+       v
+    processing
+       |
+       +-------------> synced
+       |
+       +-------------> conflict
+       |
+       +-------------> rejected
+       |
+       +-------------> retryable_error
+                              |
+                              v
+                           pending
+
+#### `pending`
+
+The operation is persisted locally and awaits synchronization.
+
+#### `processing`
+
+The synchronization engine is currently attempting to transmit the operation.
+
+#### `synced`
+
+The server accepted the operation and the complete server response has been persisted locally.
+
+#### `conflict`
+
+The server rejected the operation because the client's `base_version` is no longer current.
+
+The operation MUST NOT be automatically retried.
+
+#### `rejected`
+
+The operation was permanently rejected, for example because of:
+
+- invalid data,
+- insufficient permission,
+- invalid reference,
+- unsupported operation.
+
+The operation MUST NOT be automatically retried.
+
+#### `retryable_error`
+
+The operation failed for a temporary reason and MAY be retried.
+
+Examples include:
+
+- temporary server failure,
+- timeout,
+- transient network error.
+
+---
+
+### 0.7.6.9 Crash Recovery
+
+`processing` MUST NOT be a permanent state.
+
+Each processing attempt records a local processing timestamp or equivalent lease information.
+
+After application restart, operations whose processing lease has expired are returned to `pending`.
+
+This ensures that an application crash cannot permanently strand an Outbox operation.
+
+---
+
+### 0.7.6.10 Conflict Handling
+
+A conflict is an explicit application state.
+
+The server returns at least:
+
+- `operation_id`
+- `entity_global_id`
+- `client_base_version`
+- `server_version`
+- `server_snapshot`
+- relevant server timestamps
+
+The client preserves the local operation and the server state.
+
+Conflict resolution is a separate operation and MUST NOT happen implicitly as part of an ordinary retry.
+
+Possible future resolution strategies include:
+
+- discard local change,
+- merge changes,
+- replace local change with server state,
+- create a new mutation based on the resolved state.
+
+---
+
+### 0.7.6.11 Pull Idempotency
+
+Pull operations MUST also be idempotent.
+
+A server change MAY be delivered more than once.
+
+The client MUST safely handle already-applied changes.
+
+Entity versions are used to prevent an older entity state from overwriting a newer local state.
+
+For example:
+
+    local version = 9
+    incoming version = 8
+
+The incoming version MUST NOT replace version 9.
+
+---
+
+### 0.7.6.12 Tombstones
+
+Deletes are represented through tombstones during synchronization.
+
+A delete change contains the relevant entity identity, version and deletion timestamp.
+
+Local deletion MUST NOT immediately destroy the information required to recognize an old or repeated synchronization operation.
+
+Tombstone retention is a server-side lifecycle concern and will be defined separately.
+
+---
+
+### 0.7.6.13 Cursor Expiration
+
+The server MAY eventually remove old entries from the change feed.
+
+If a client presents a cursor that is older than the retained synchronization history, the server returns:
+
+    cursor_expired
+
+The client MUST NOT simply advance the cursor.
+
+Instead, the synchronization state becomes:
+
+    resync_required
+
+A full authorized resynchronization is then performed.
+
+---
+
+### 0.7.6.14 Full Resynchronization
+
+A full resynchronization creates a new consistent server baseline for the device.
+
+Conceptually:
+
+    resync_required
+          |
+          v
+       resyncing
+          |
+          v
+    applying snapshot
+          |
+          v
+         idle
+
+A full resynchronization MUST NOT silently delete pending local Outbox operations.
+
+Pending local mutations remain separate from the downloaded server baseline and require subsequent synchronization or conflict handling.
+
+---
+
+### 0.7.6.15 Access and Assignment Resynchronization
+
+The normal change cursor MUST NOT be the only mechanism for acquiring data that becomes newly authorized.
+
+For example, if an employee is newly assigned to a project whose previous changes are already behind the employee's cursor, the project MUST still become available to the device.
+
+Therefore GlasHaus supports an additional access/assignment resynchronization mechanism.
+
+This mechanism may provide:
+
+- full authorized entities,
+- minimal authorized basis records,
+- newly assigned projects,
+- newly granted access.
+
+It complements the normal change feed and does not replace it.
+
+---
+
+### 0.7.6.16 Authorization
+
+Synchronization is always evaluated in the context of:
+
+- authenticated user,
+- authorized device,
+- applicable permissions,
+- project assignments,
+- available data access level.
+
+The server MUST NOT expose arbitrary change-feed entries simply because their `change_sequence` is newer than the client's cursor.
+
+A client may receive only data it is authorized to access.
+
+---
+
+### 0.7.6.17 Basis Records
+
+GlasHaus supports minimal basis records for exceptional access scenarios.
+
+A basis record may contain only the information required to identify or reach a project, such as:
+
+- project identity,
+- project name,
+- site address,
+- minimal metadata.
+
+A basis record does not imply full project access.
+
+This mechanism allows controlled access to projects that are not part of the employee's normal assignment without requiring all project data to be stored locally on every device.
+
+---
+
+### 0.7.6.18 Background Synchronization and User Experience
+
+Synchronization MUST NOT block the application UI.
+
+The following operations are explicitly independent from synchronization:
+
+    User action
+        |
+        v
+    Local validation
+        |
+        v
+    Local transaction
+        |
+        +----> Local entity state
+        |
+        +----> Outbox operation
+        |
+        v
+    User may continue immediately
+
+The background synchronization engine subsequently processes the Outbox.
+
+The user does not need to wait for:
+
+- server acknowledgement,
+- global ID assignment,
+- server timestamps,
+- conflict checking,
+- change-feed processing.
+
+The application MUST clearly distinguish between:
+
+- locally saved,
+- synchronized,
+- pending synchronization,
+- conflict,
+- rejected.
+
+A locally saved operation is immediately available to the user even when it has not yet reached the server.
+
+---
+
+### 0.7.6.19 Network State vs Synchronization State
+
+Network connectivity and synchronization state are separate concepts.
+
+Examples:
+
+    offline
+    online + syncing
+    online + idle
+    online + conflict
+    online + retryable error
+    online + resync required
+
+The application MUST NOT infer that a connected device is synchronized.
+
+Likewise, an offline device is not considered to be in an error state merely because it cannot synchronize.
+
+---
+
+### 0.7.6.20 Synchronization API
+
+The initial synchronization API consists conceptually of:
+
+    POST /api/v1/sync/push
+    POST /api/v1/sync/pull
+    POST /api/v1/sync/resync
+
+An additional access/assignment resynchronization endpoint MAY be provided.
+
+Push and pull have intentionally different semantics.
+
+Push means:
+
+    "Please process this local mutation."
+
+Pull means:
+
+    "Provide server-side changes after this synchronization position."
+
+They MUST NOT be represented as one generic event operation.
+
+---
+
+### 0.7.6.21 Server Timestamps
+
+Server-side timestamps are authoritative for server-controlled temporal information.
+
+The server creates timestamps such as:
+
+- `server_created_at`
+- `server_updated_at`
+- `server_deleted_at`
+
+Client device time MUST NOT be used as the authoritative ordering mechanism for synchronization.
+
+The device clock may be unreliable or deliberately incorrect.
+
+Local time may still be used for:
+
+- user interface presentation,
+- local sorting where appropriate,
+- diagnostics,
+- locally meaningful timestamps.
+
+---
+
+### 0.7.6.22 Local Sequence
+
+Each device maintains a monotonic local sequence for locally generated mutations.
+
+The local sequence is independent of:
+
+- server `change_sequence`,
+- entity `version`,
+- device clock time.
+
+It exists to provide deterministic ordering of locally generated operations and to avoid relying on potentially incorrect device clocks.
+
+The local sequence MUST NOT be interpreted as a globally meaningful ordering.
+
+---
+
+### 0.7.6.23 Background Sync Failure Isolation
+
+A failed synchronization operation MUST NOT automatically block unrelated local work.
+
+For example:
+
+    Protocol A  -> synced
+    Photo A     -> synced
+    Signature A -> synced
+    Offer A     -> conflict
+    Calendar A  -> synced
+
+The conflict on the offer MUST NOT prevent the user from continuing to work with the protocol, photos, signature or calendar request.
+
+Likewise, a temporary network failure MUST NOT make the application read-only.
+
+---
+
+### 0.7.6.24 Sync State Visibility
+
+The synchronization engine exposes status information to the application UI.
+
+The UI may display:
+
+    Offline
+    Synchronizing...
+    3 changes pending
+    Up to date
+    Conflict requires attention
+    Synchronization error
+    Resynchronization required
+
+The exact visual design is a UI concern.
+
+The synchronization architecture defines only the semantic states.
+
+The UI MUST NOT require the user to manually initiate synchronization for normal operation.
+
+Manual synchronization MAY be offered as an additional action.
+
+---
+
+### 0.7.6.25 Core Invariants
+
+The following invariants are mandatory:
+
+1. Local application use does not depend on server availability.
+2. Local mutations are persisted before entering the Outbox.
+3. Every Outbox mutation has a unique persistent `operation_id`.
+4. Server-created `global_id` values are authoritative.
+5. Entity versions are server-controlled.
+6. Server timestamps are authoritative.
+7. Change sequences are server-controlled.
+8. Synchronization cursors are advanced only after successful local persistence.
+9. Duplicate delivery is safe.
+10. Failed responses may be retried safely.
+11. Conflicts are explicit states.
+12. Permanent rejections are not automatically retried.
+13. Resynchronization does not silently discard pending local work.
+14. Newly granted access cannot be hidden permanently behind an old cursor.
+15. Synchronization runs in the background.
+16. Synchronization status is observable but not normally blocking.
+17. Network availability and synchronization state remain separate.
