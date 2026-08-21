@@ -1,238 +1,301 @@
 # GlasHaus Roadmap
 
-# STATUS
+## 1. Purpose
 
-## Current Phase
-- [ ] Phase A — Infrastructure & Secure Development Environment
+This roadmap separates long-term product vision from near-term engineering work.
 
----
+The repository is currently at foundation stage.
 
-# Phase A — Infrastructure & Secure Development Environment
-
-## Goals
-Establish a secure Linux server environment for development and future deployment.
-
-## Tasks
-
-### Server Security
-- [x] GitHub repository connected
-- [ ] Linux server hardening
-- [ ] SSH-only authentication
-- [ ] Disable root login
-- [ ] UFW firewall configuration
-- [ ] Fail2Ban setup
-- [ ] WireGuard VPN setup
-- [ ] Automatic server bootstrap script
-
-### Development Environment
-- [ ] VS Code Remote SSH setup
-- [ ] WSL integration
-- [ ] Python virtual environment setup
-- [ ] Linter setup (ruff / flake8)
-- [ ] Formatting setup (black)
-- [ ] mypy type checking
-- [ ] pytest test environment
-
-### CI/CD Preparation
-- [ ] GitHub Actions initial setup
-- [ ] Automated linting
-- [ ] Automated tests
+Architecture documents describe target behavior and are not evidence that the described functionality is already implemented.
 
 ---
 
-# Phase B — Backend Core System
+## 2. Current Status
 
-## Goals
-Build the secure backend foundation.
+Current repository foundations include:
 
-## Tasks
+- backend foundation,
+- FastAPI foundation,
+- SQLAlchemy persistence foundation,
+- initial device/synchronization models,
+- development and quality tooling.
 
-### Backend Architecture
-- [ ] FastAPI initialization
-- [ ] Modular backend structure
-- [ ] Environment config system
-- [ ] Logging infrastructure
-- [ ] Exception handling
+The following are not yet considered implemented merely because they appear in the architecture:
 
-### Database
-- [ ] PostgreSQL installation
-- [ ] SQLAlchemy setup
-- [ ] Alembic migrations
-- [ ] Base models
-- [ ] Offline sync metadata fields
-
-### Authentication & Security
-- [ ] JWT auth
-- [ ] Refresh token rotation
-- [ ] 2FA support
-- [ ] RBAC engine
-- [ ] ABAC engine
-- [ ] Audit logging
-- [ ] Encryption utilities
-
-### Storage
-- [ ] Secure document storage
-- [ ] S3/MinIO abstraction
-- [ ] File versioning
+- complete business domain,
+- authentication,
+- authorization,
+- application-level encryption,
+- encrypted document storage,
+- document workflows,
+- offline synchronization,
+- mobile client.
 
 ---
 
-# Phase C — Browser MVP
+# 3. Engineering Roadmap
 
-## Goals
-Build first usable browser interface.
+## Phase 0 — Architecture Reset
 
-## Tasks
+- [ ] consolidate `ARCHITECTURE.md`
+- [ ] add `SECURITY.md`
+- [ ] add `CRYPTOGRAPHY.md`
+- [ ] add `SYNC.md`
+- [ ] rewrite roadmap around implementation order
+- [ ] review `AI_RULES.md` for obsolete architecture references
+- [ ] remove duplicate/obsolete architecture documentation
 
-### Frontend Foundation
-- [ ] Next.js initialization
-- [ ] Authentication pages
-- [ ] Protected routes
-- [ ] API communication layer
-
-### Admin Dashboard
-- [ ] User CRUD
-- [ ] Role management
-- [ ] ABAC assignment UI
-- [ ] Activity overview
-
-### Employee Features
-- [ ] Calendar view
-- [ ] Time tracking
-- [ ] Project assignment
-- [ ] Task checklist system
+**Exit:** architecture documents are consistent and clearly distinguish target architecture from implementation status.
 
 ---
 
-# Phase D — Android MVP
+## Phase 1 — Security and Cryptography Foundation
 
-## Goals
-Mobile-first field usability.
+- [ ] define data classification
+- [ ] define authentication/session model
+- [ ] define authorization model
+- [ ] define device trust
+- [ ] define audit model
+- [ ] choose cryptographic library
+- [ ] implement key-provider abstraction
+- [ ] implement versioned encryption envelope
+- [ ] implement encrypted document storage path
+- [ ] define backup/key recovery
+- [ ] add security and cryptography tests
 
-## Tasks
-
-### Mobile Foundation
-- [ ] React Native / Flutter setup
-- [ ] Authentication flow
-- [ ] Secure token storage
-
-### Offline First
-- [ ] SQLite local storage
-- [ ] Sync engine
-- [ ] Conflict resolution
-- [ ] Offline document cache
-
-### Device Features
-- [ ] Camera integration
-- [ ] Background sync
-- [ ] Push notifications
+**Exit:** one real sensitive-data path is encrypted, authorized, audited and tested end-to-end.
 
 ---
 
-# Phase E — Customer & Project Management
+## Phase 2 — Domain Model and Persistence
 
-## Goals
-Project-centric workflow management.
+Initial candidates:
 
-## Tasks
+- [ ] Organization
+- [ ] User
+- [ ] Device
+- [ ] Customer / Prospect
+- [ ] Project
+- [ ] Work Order
+- [ ] Document
+- [ ] Document Version
 
-### Customer System
-- [ ] Customer roles
-- [ ] Customer dashboard
+For each entity:
 
-### Project System
-- [ ] Project CRUD
-- [ ] Employee assignment
-- [ ] Calendar integration
-- [ ] Checklist system
-- [ ] Deadline tracking
+- [ ] business invariants
+- [ ] lifecycle
+- [ ] authorization scope
+- [ ] persistence model
+- [ ] audit requirements
+- [ ] offline-capability decision
 
----
-
-# Phase F — PDF & OCR System
-
-## Goals
-Digital document workflows.
-
-## Tasks
-
-### PDF Processing
-- [ ] PDF creation
-- [ ] Form filling
-- [ ] Image attachments
-- [ ] Offline PDF editing
-
-### Signature System
-- [ ] Digital signatures
-- [ ] Signature validation
-
-### OCR
-- [ ] OCR pipeline
-- [ ] Text extraction
-- [ ] Searchable documents
+**Exit:** the first coherent business workflow persists without speculative generic abstractions.
 
 ---
 
-# Phase G — IDS Connect & Supplier Integration
+## Phase 3 — Authentication and Authorization
 
-## Goals
-Supplier integration & pricing automation.
+- [ ] user authentication
+- [ ] password hashing
+- [ ] session/token lifecycle
+- [ ] 2FA
+- [ ] role/permission model
+- [ ] resource authorization
+- [ ] device registration/revocation
+- [ ] audit events
+- [ ] security tests
 
-## Tasks
-
-### Supplier APIs
-- [ ] IDS Connect integration
-- [ ] Supplier abstraction layer
-
-### Pricing
-- [ ] Price comparison engine
-- [ ] Cart optimization
-- [ ] Supplier ranking
-
-### Exports
-- [ ] PDF quote generation
-- [ ] XML export
+**Exit:** authenticated users can access only authorized resources.
 
 ---
 
-# Phase H — RFID / QR / IoT Layer
+## Phase 4 — First Usable Web MVP
 
-## Goals
-Physical workflow automation.
+Recommended vertical slice:
 
-## Tasks
+```text
+User
+  ↓
+Customer
+  ↓
+Project
+  ↓
+Work Order
+  ↓
+Document
+```
 
-### RFID
-- [ ] RFID login
-- [ ] Time tracking
-- [ ] Access control
+- [ ] Next.js foundation
+- [ ] authentication
+- [ ] protected routes
+- [ ] customer/project views
+- [ ] work-order workflow
+- [ ] document upload/download
+- [ ] authorization UI
+- [ ] end-to-end tests
 
-### QR System
-- [ ] Inventory QR labels
-- [ ] QR scanning
-- [ ] Automatic stock updates
+Do not build every planned feature before this slice works.
 
-### IoT
-- [ ] Realtime event system
-- [ ] WebSocket integration
+---
+
+## Phase 5 — Document and Communication Workflows
+
+- [ ] encrypted document versions
+- [ ] document metadata
+- [ ] secure downloads
+- [ ] PDF generation
+- [ ] document preview
+- [ ] controlled document sharing
+- [ ] outbound mail integration
+- [ ] TLS mail transport
+- [ ] optional encrypted delivery
+- [ ] retention/deletion policy
 
 ---
 
-# Phase I — AI Pricing Portal
+## Phase 6 — Mobile Foundation
 
-## Goals
-Public customer lead generation.
+- [ ] select React Native or Flutter
+- [ ] authentication
+- [ ] secure local key storage
+- [ ] encrypted local database
+- [ ] local domain persistence
+- [ ] camera/assets
+- [ ] basic offline UX
+- [ ] local authorization cache
 
-## Tasks
-
-### Public Portal
-- [ ] Product configurator
-- [ ] Rule engine
-- [ ] Estimation logic
-
-### AI Features
-- [ ] AI estimation support
-- [ ] Lead qualification
-- [ ] Recommendation engine
+Do not implement the complete synchronization engine yet.
 
 ---
+
+## Phase 7 — Synchronization MVP
+
+Start with one or two real entities.
+
+- [ ] local identity
+- [ ] outbox
+- [ ] push
+- [ ] idempotency
+- [ ] optimistic concurrency
+- [ ] pull
+- [ ] cursor
+- [ ] explicit conflicts
+- [ ] retry
+- [ ] deletion/tombstones
+- [ ] background sync
+- [ ] sync status UI
+
+**Exit:** a real offline workflow survives restart, retry and connectivity loss without silent data loss.
+
+---
+
+## Phase 8 — Domain Expansion
+
+Incrementally add:
+
+- [ ] protocols
+- [ ] photographs
+- [ ] signatures
+- [ ] offers
+- [ ] calendar/planning
+- [ ] change orders
+- [ ] warranty work
+- [ ] emergency project access
+- [ ] completed/archived projects
+
+Each offline-capable entity defines its own synchronization semantics.
+
+---
+
+## Phase 9 — Advanced Document Automation
+
+- [ ] OCR
+- [ ] searchable documents
+- [ ] advanced PDF workflows
+- [ ] signature validation
+- [ ] document templates
+- [ ] automated document generation
+
+---
+
+## Phase 10 — Integrations and Automation
+
+Only after the core product is stable:
+
+- [ ] IDS Connect
+- [ ] supplier integrations
+- [ ] pricing workflows
+- [ ] XML/export integrations
+- [ ] notifications
+- [ ] QR/RFID
+- [ ] IoT integrations
+- [ ] AI-assisted pricing
+
+---
+
+# 4. Product Vision
+
+Long-term goals may include:
+
+- complete customer/project management,
+- mobile field operations,
+- offline-first workflows,
+- document management,
+- signatures,
+- scheduling,
+- supplier integration,
+- pricing automation,
+- RFID/QR/IoT workflows,
+- AI-assisted estimation.
+
+These are product goals, not current engineering commitments.
+
+---
+
+# 5. Sequencing Rules
+
+1. Security architecture precedes sensitive-data implementation.
+2. Domain modeling precedes generic synchronization.
+3. One complete vertical slice is preferred over many unfinished modules.
+4. Generic infrastructure requires a real use case.
+5. Offline synchronization is introduced incrementally.
+6. New infrastructure requires a concrete operational reason.
+7. Product-vision items enter active engineering only after explicit prioritization.
+8. Every phase leaves the repository runnable and tested.
+
+---
+
+# 6. Definition of Done
+
+A phase is complete only when:
+
+- intended behavior exists,
+- automated tests cover critical behavior,
+- quality gates pass,
+- security implications are addressed,
+- documentation matches implementation,
+- no known architectural contradiction is introduced.
+
+---
+
+# 7. Immediate Next Work
+
+```text
+Architecture Reset
+      ↓
+Crypto/Security Design Review
+      ↓
+Encrypted Document Proof-of-Concept
+      ↓
+Domain Model
+      ↓
+Authentication/Authorization
+      ↓
+First Web Vertical Slice
+      ↓
+Mobile
+      ↓
+Sync MVP
+```
+
+The synchronization engine is deliberately not the next implementation task.

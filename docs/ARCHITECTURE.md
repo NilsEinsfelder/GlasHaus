@@ -2,1571 +2,333 @@
 
 ## 1. Purpose
 
-This document defines the binding architectural principles of the GlasHaus platform.
+This document defines the stable system-level architecture of GlasHaus.
 
-It describes the system architecture, offline-first behavior, identity model, synchronization model, project access model, and the boundaries between client-side and server-side responsibilities.
+It describes architectural boundaries, responsibilities and invariants.
 
-The architecture MUST be treated as a long-term design contract.
+Detailed specifications live in:
 
-Implementation details may evolve, but changes to the principles defined here require an explicit architectural decision.
+- `SECURITY.md` — authentication, authorization, trust boundaries and auditing
+- `CRYPTOGRAPHY.md` — encryption and key management
+- `SYNC.md` — offline-first synchronization
+- `Roadmap.md` — implementation order and project status
 
----
+This document describes the target architecture. It does not imply that every described component is already implemented.
 
-# 2. Architectural Principles
+### Normative language
 
-GlasHaus follows these core principles:
-
-1. Offline-first operation is a fundamental requirement.
-2. The mobile/field client MUST remain usable without an internet connection.
-3. Local data MUST have a stable local identity.
-4. Server-side identity MUST be separate from local identity.
-5. Synchronization MUST be explicit, reliable, resumable, and idempotent.
-6. Local changes MUST never be silently lost.
-7. Server state MUST never be silently overwritten by conflicting offline changes.
-8. Business logic MUST remain independent from transport and persistence concerns.
-9. Security MUST be enforced on the server and respected by the client.
-10. Architectural complexity MUST be introduced only where it provides a concrete operational benefit.
+- **MUST** — mandatory architectural requirement.
+- **SHOULD** — default recommendation; deviations require a documented reason.
+- **MAY** — optional behavior.
 
 ---
 
-# 3. System Architecture
+## 2. Architectural Principles
 
-The GlasHaus platform consists conceptually of the following components:
-
-    ┌───────────────────────────────┐
-    │        Field Client           │
-    │                               │
-    │  UI                           │
-    │  Application Logic            │
-    │  Local Database               │
-    │  Offline Sync Engine          │
-    │  Outbox                       │
-    │  Local Asset Storage          │
-    └───────────────┬───────────────┘
-                    │
-                    │ Synchronization
-                    │
-    ┌───────────────▼───────────────┐
-    │          Backend API           │
-    │                                │
-    │  Authentication                │
-    │  Authorization                 │
-    │  Business Services             │
-    │  Synchronization               │
-    │  Validation                    │
-    └───────────────┬────────────────┘
-                    │
-    ┌───────────────▼───────────────┐
-    │          PostgreSQL            │
-    │                                │
-    │  Authoritative Server State    │
-    │  Global Identities             │
-    │  Versions                      │
-    │  Audit Information             │
-    └───────────────────────────────┘
-
-The server is authoritative for globally synchronized state.
-
-The field client is authoritative for locally created work until that work has been successfully synchronized.
+1. GlasHaus is a modular monolith unless a concrete operational requirement justifies a separate service.
+2. The field client is offline-first.
+3. Server-side authorization is authoritative.
+4. Local work must survive connectivity loss and device restarts.
+5. Synchronization must be durable, resumable, idempotent and conflict-aware.
+6. Business/domain logic must remain independent from HTTP, database and storage implementations.
+7. Sensitive data must be protected according to `SECURITY.md` and `CRYPTOGRAPHY.md`.
+8. Binary assets are handled separately from ordinary structured data.
+9. Business-critical actions are auditable.
+10. Complexity is introduced only when it solves a demonstrated problem.
+11. Architectural decisions with material security, data-integrity or synchronization impact must be documented before implementation.
+12. The implementation must not claim guarantees that the underlying platform cannot provide.
 
 ---
 
-# 4. Offline-First Requirement
+## 3. System Context
 
-The field application MUST remain functionally usable when:
+```text
+                    ┌──────────────────────┐
+                    │      Web Client      │
+                    │       Next.js        │
+                    └──────────┬───────────┘
+                               │ HTTPS
+                               ▼
+                    ┌───────────────────────┐
+                    │      GlasHaus API     │
+                    │        FastAPI        │
+                    │                       │
+                    │ Auth / Authorization  │
+                    │ Domain Services       │
+                    │ Sync                  │
+                    │ Audit                 │
+                    │ Document Services     │
+                    └───────┬──────┬────────┘
+                            │      │
+                            ▼      ▼
+                    ┌──────────┐ ┌──────────────┐
+                    │PostgreSQL│ │Object Storage│
+                    │          │ │ S3 / MinIO   │
+                    └──────────┘ └──────────────┘
 
-- no mobile network is available,
-- no Wi-Fi is available,
-- the device temporarily loses connectivity,
+                    ┌──────────────────────┐
+                    │ Field / Mobile Client│
+                    │ local DB + assets    │
+                    │ outbox + sync        │
+                    └──────────┬───────────┘
+                               │ HTTPS
+                               ▼
+                         GlasHaus API
+```
+
+The browser client is primarily an online client.
+
+The field/mobile client is an offline-capable client with durable local state.
+
+---
+
+## 4. Server Architecture
+
+The backend is a modular monolith.
+
+Conceptual structure:
+
+```text
+backend/app/
+├── api/
+├── core/
+│   ├── config/
+│   ├── security/
+│   ├── crypto/
+│   └── logging/
+├── domain/
+│   ├── customers/
+│   ├── projects/
+│   ├── work_orders/
+│   ├── documents/
+│   ├── offers/
+│   └── users/
+├── application/
+│   ├── services/
+│   └── sync/
+└── infrastructure/
+    ├── database/
+    ├── storage/
+    ├── mail/
+    └── crypto/
+```
+
+The exact package names may evolve.
+
+The important dependency direction is:
+
+```text
+API / transport
+      ↓
+Application services
+      ↓
+Domain logic
+      ↓
+Infrastructure adapters
+```
+
+Domain code must not depend directly on FastAPI request objects, database sessions or external storage clients.
+
+---
+
+## 5. Data Stores
+
+### PostgreSQL
+
+PostgreSQL is authoritative for synchronized structured business data, including as appropriate:
+
+- users and organizations
+- customers and prospects
+- projects and work orders
+- document metadata
+- authorization data
+- audit records
+- synchronization metadata
+
+Production database storage must use infrastructure-level encryption.
+
+Additional application-level encryption is defined in `CRYPTOGRAPHY.md`.
+
+### Object Storage
+
+S3-compatible storage is used for binary assets such as:
+
+- photographs
+- documents
+- generated PDFs
+- signatures and attachments
+
+Sensitive objects are encrypted before durable storage.
+
+Object-store access control is an additional layer, not the primary confidentiality boundary.
+
+### Local Mobile Storage
+
+The field client has durable local storage.
+
+Sensitive local data must be encrypted according to `CRYPTOGRAPHY.md`.
+
+---
+
+## 6. Domain Model Before Generic Synchronization
+
+Synchronization must not dictate the business domain.
+
+The implementation order is:
+
+1. define the domain entity and invariants,
+2. define persistence,
+3. decide whether it is offline-capable,
+4. define synchronization semantics,
+5. implement synchronization.
+
+Not every entity must be offline-capable, synchronizable or automatically mergeable.
+
+---
+
+## 7. Offline-First Boundary
+
+Offline operation is a product requirement for the field client.
+
+The client must be able to continue working with locally available and locally authorized data when:
+
+- there is no network,
 - the backend is unavailable,
-- the device is restarted while offline.
+- connectivity is intermittent,
+- the application is restarted while offline.
 
-A device restart MUST NOT destroy locally stored work.
-
-The following operations MUST be possible offline when the user has the required local permissions and data:
-
-- viewing assigned projects,
-- viewing locally available project information,
-- creating and editing work data,
-- creating protocols,
-- adding photographs,
-- capturing signatures,
-- creating offers,
-- adding standard articles,
-- creating calendar-related planning information,
-- creating permitted customer/prospect information,
-- storing changes for later synchronization.
-
-The application MUST clearly distinguish between:
-
-- data successfully synchronized with the server,
-- locally created or modified data waiting for synchronization,
-- synchronization failures,
-- synchronization conflicts.
-
----
-
-# 5. Local and Global Identity
-
-Every offline-capable entity MUST have a stable local identity.
-
-## 5.1 Local Identity
-
-`local_id` is generated by the client.
-
-It MUST:
-
-- be unique on the device,
-- remain stable for the lifetime of the local entity,
-- survive application restarts,
-- survive synchronization,
-- never be replaced by `global_id`.
-
-Local relationships MUST use `local_id`.
-
-Example:
-
-    Project
-    local_id = P-001
-
-    Protocol
-    local_id = PR-001
-    project_local_id = P-001
-
-    Photo
-    local_id = PH-001
-    protocol_local_id = PR-001
-
----
-
-## 5.2 Global Identity
-
-`global_id` is generated exclusively by the server.
-
-An entity created offline MUST initially have:
-
-    global_id = NULL
-
-The client MUST NOT generate a `global_id`.
-
-After successful server synchronization, the server assigns the global identity.
-
-Example:
-
-    Before synchronization:
-
-    local_id  = P-001
-    global_id = NULL
-
-    After synchronization:
-
-    local_id  = P-001
-    global_id = G-4711
-
-The `local_id` MUST remain unchanged.
-
-The server MUST therefore be able to associate the uploaded entity with its original local identity.
-
----
-
-# 6. Entity Synchronization Metadata
-
-Offline-capable entities SHOULD contain the following synchronization metadata:
-
-    local_id
-    global_id
-    sync_status
-    version
-    created_at
-    updated_at
-    deleted_at
-
-The exact database representation may vary by entity.
-
-Timestamps MUST be stored as timezone-aware UTC timestamps.
-
-The user interface MAY display timestamps in local time.
-
----
-
-# 7. Synchronization States
-
-The synchronization state describes the relationship between local state and server state.
-
-The following states are defined:
-
-### `pending`
-
-A local change exists and has not yet been successfully synchronized.
-
-### `synced`
-
-The local state corresponds to the server state.
-
-### `modified`
-
-A previously synchronized entity has been modified locally.
-
-### `conflict`
-
-The local change cannot be automatically reconciled with the current server state.
-
-### `failed`
-
-A synchronization attempt failed.
-
-A `failed` state MUST NOT mean that the user's data is discarded.
-
-The system MUST retain the local data and allow another synchronization attempt.
-
----
-
-# 8. Outbox
-
-Every local modification of an offline-capable entity MUST create a corresponding outbox operation.
-
-The entity modification and the outbox entry MUST be persisted atomically.
-
-Conceptually:
-
-    BEGIN TRANSACTION
-
-    Update local entity
-
-    Create outbox operation
-
-    COMMIT
-
-This prevents a state in which:
-
-    Entity changed locally
-    BUT
-    synchronization operation was not recorded
-
-The outbox MUST survive:
-
-- application restarts,
-- device restarts,
-- temporary connectivity loss,
-- backend outages.
-
-The outbox MUST therefore be persistent local data and MUST NOT exist only in memory.
-
----
-
-# 9. Outbox Operations
-
-Each outbox operation MUST have its own unique `operation_id`.
-
-The operation identity is independent from the entity identity.
-
-Example:
-
-    Entity:
-    local_id = P-001
-
-    Operation:
-    operation_id = O-001
-    operation = CREATE
-
-A later modification creates another operation:
-
-    operation_id = O-002
-    operation = UPDATE
-
-The system MUST NOT assume that one entity has only one synchronization operation.
-
-An entity may have multiple pending operations.
-
-The implementation MAY later optimize or coalesce operations where safe, but such optimization MUST NOT change the externally observable result.
-
----
-
-# 10. Idempotent Synchronization
-
-Synchronization operations MUST be idempotent.
-
-If the client sends:
-
-    operation_id = O-001
-
-and the request reaches the server but the response is lost, the client MUST be allowed to retry:
-
-    operation_id = O-001
-
-The server MUST recognize that the operation has already been processed and MUST NOT create duplicate data.
-
-This requirement is especially important for:
-
-- offline synchronization,
-- unreliable mobile networks,
-- request timeouts,
-- application restarts,
-- repeated synchronization attempts.
-
----
-
-# 11. Offline Creation and Global Identity Assignment
-
-An offline-created entity follows this lifecycle:
-
-    Client creates entity
-            │
-            ▼
-    local_id generated
-            │
-            ▼
-    global_id = NULL
-            │
-            ▼
-    Entity stored locally
-            │
-            ▼
-    CREATE operation added to outbox
-            │
-            ▼
-    Connectivity restored
-            │
-            ▼
-    Server receives operation
-            │
-            ▼
-    Server creates authoritative entity
-            │
-            ▼
-    Server assigns global_id
-            │
-            ▼
-    Client receives synchronization result
-            │
-            ▼
-    local entity receives global_id
-            │
-            ▼
-    Entity becomes synced
-
-The local identity MUST NOT change during this process.
-
----
-
-# 12. Synchronization Cursor
-
-Server-to-client synchronization MUST use a resumable cursor or equivalent mechanism.
-
-The client stores its last successfully processed synchronization position.
-
-Example:
-
-    last_sync_cursor = 18473
-
-The next synchronization request asks for changes after that position.
-
-Conceptually:
-
-    Client:
-    "Give me changes after 18473."
-
-    Server:
-    18474
-    18475
-    18476
-    ...
-
-The cursor MUST only advance after the corresponding changes have been successfully persisted locally.
-
-The client MUST NOT acknowledge data it has not successfully stored.
-
-This allows synchronization to resume safely after:
-
-- application crashes,
-- device restarts,
-- interrupted network connections,
-- partial synchronization.
-
----
-
-# 13. Optimistic Concurrency
-
-Synchronized entities MUST use a versioning mechanism.
-
-Example:
-
-    Server version = 8
-    Client version = 8
-
-The client submits an update based on version 8.
-
-If the server still has version 8:
-
-    Update accepted
-    New server version = 9
-
-If the server has already changed the entity:
-
-    Client expected version = 8
-    Server version           = 9
-
-the server MUST NOT silently overwrite the newer server state.
-
-The operation becomes a conflict.
-
----
-
-# 14. Conflict Resolution
-
-Conflicts MUST be explicit.
-
-The system MUST NOT silently choose:
-
-    last write wins
-
-for all business entities without an explicit architectural decision.
-
-Different entities may require different conflict strategies.
-
-Examples:
-
-- simple metadata MAY be mergeable,
-- calendar changes MAY require user review,
-- signed protocols MUST NOT be silently overwritten,
-- financial documents MUST use strict conflict handling,
-- photographs and other immutable assets generally SHOULD be append-only.
-
-The exact conflict resolution strategy is defined as part of the respective domain model.
-
----
-
-# 15. Soft Delete
-
-Synchronizable entities MUST NOT normally be physically deleted immediately.
-
-Instead, deletion SHOULD be represented by a deletion marker such as:
-
-    deleted_at
-
-or an equivalent state.
-
-This allows deletion to be synchronized between devices.
-
-Example:
-
-    Device A:
-    Entity deleted offline
-
-    Device B:
-    Entity still exists locally
-
-    Sync:
-    Deletion propagated to Device B
-
-Physical deletion MAY occur later as part of a controlled retention and cleanup process.
-
----
-
-# 16. Binary Assets
-
-Binary data such as:
-
-- photographs,
-- signatures,
-- documents,
-- generated PDFs,
-
-MUST be treated separately from ordinary structured entity data.
-
-A local asset SHOULD contain metadata such as:
-
-    local_id
-    global_id
-    entity_local_id
-    filename
-    mime_type
-    size
-    sha256
-    sync_status
-    local_path
-
-The synchronization queue SHOULD reference the asset rather than embedding large binary payloads directly into ordinary entity operations.
-
-This allows later support for:
-
-- resumable uploads,
-- integrity verification,
-- retryable uploads,
-- background synchronization,
-- storage optimization.
-
-A checksum such as SHA-256 SHOULD be used to verify asset integrity.
-
----
-
-# 17. Transactional Guarantees
-
-Local changes and their synchronization metadata MUST be treated transactionally.
-
-For example:
-
-    BEGIN
-
-    Create protocol
-    Create protocol photo relation
-    Create signature metadata
-    Create outbox operation
-
-    COMMIT
-
-If the transaction fails, none of the changes should become visible as successfully persisted work.
-
-The synchronization engine MUST likewise avoid acknowledging an operation before its result has been safely persisted locally.
-
-The general rule is:
-
-> Never acknowledge state that has not been durably stored.
-
----
-
-# 18. Assigned Projects
-
-A field user normally receives a locally available working set of projects to which they are assigned.
-
-Assigned project data MAY include:
-
-- project identity,
-- customer/prospect information required for the work,
-- site address,
-- contacts,
-- work orders,
-- relevant documents,
-- articles,
-- previous work information required for the assigned task,
-- locally relevant calendar information.
-
-The offline working set MUST be limited to information required for the user's work and permissions.
-
-The client MUST NOT download the complete server database merely to support offline operation.
-
----
-
-# 19. Project Directory
-
-In addition to assigned project data, the client MAY maintain a lightweight offline Project Directory.
-
-The Project Directory is intentionally smaller than the full project dataset.
-
-It MAY contain:
-
-    project identifier
-    project name
-    customer/prospect name
-    site address
-    basic contact information
-    project status
-
-Its purpose is to support controlled discovery when the user needs to locate a project that is not part of the normal assigned working set.
-
-The Project Directory MUST NOT automatically grant access to the complete project data.
-
----
-
-# 20. Emergency Project Access
-
-A field user may occasionally need to work on a project to which they are not currently assigned.
-
-Examples include:
-
-- short-notice replacement of another technician,
-- emergency service work,
-- follow-up work on a completed project,
-- post-completion defects,
-- additional work or a later change order.
-
-The system therefore supports controlled Emergency Project Access.
-
-The workflow SHOULD be:
-
-    Search Project Directory
-            │
-            ▼
-    Identify project
-            │
-            ▼
-    Request / activate emergency access
-            │
-            ▼
-    Record reason and user identity
-            │
-            ▼
-    Provide permitted project information
-            │
-            ▼
-    Create local work data
-            │
-            ▼
-    Synchronize when connectivity returns
-
-Emergency access MUST be auditable.
-
-The exact authorization rules are part of the permission model.
-
----
-
-# 21. Completed and Archived Projects
-
-A completed project MUST remain referenceable.
-
-Completion does not mean that the project ceases to exist.
-
-This is required because later activity may include:
-
-- change orders,
-- warranty work,
-- defect reports,
-- additional measurements,
-- documentation,
-- invoices,
-- customer follow-up.
-
-A completed project SHOULD therefore transition into an archived or completed state rather than being deleted.
-
-New work SHOULD normally be represented as a separate work order, change order, or equivalent domain object.
-
-A completed project MUST NOT simply be reopened without an explicit business reason.
-
----
-
-# 22. Change Orders
-
-Additional work after project completion SHOULD be represented independently from the original completed work.
-
-Conceptually:
-
-    Project
-    │
-    ├── Original Work
-    │
-    ├── Change Order 1
-    │
-    ├── Change Order 2
-    │
-    └── Warranty Work
-
-This preserves the historical state of the original project.
-
-Change orders may reference the original project but have their own:
-
-- status,
-- articles,
-- pricing,
-- documents,
-- protocols,
-- planning information,
-- synchronization lifecycle.
-
----
-
-# 23. Prospect and Customer Model
-
-Prospects and customers are conceptually part of the same business lifecycle.
-
-A prospect MAY become a customer without requiring the creation of an unrelated second business entity.
-
-The system SHOULD therefore model the relationship so that:
-
-    Prospect
-       │
-       │ conversion
-       ▼
-    Customer
-
-does not require losing historical data.
-
-The exact domain representation will be defined in the customer/prospect data model.
-
-Prospect/customer records SHOULD support offline creation for users with the required permissions.
-
-This supports scenarios such as:
-
-- an executive conducting an offline customer meeting,
-- a technician identifying a new potential customer,
-- creation of a new project while offline.
-
----
-
-# 24. Offline Authentication
-
-Offline authentication MUST be distinct from normal online authentication.
-
-The client MAY use a previously established trusted device session to authenticate the user while offline.
-
-The client MUST NOT require the backend to validate credentials during every offline application startup.
-
-An offline login MUST therefore rely on locally stored, securely protected authentication material.
-
-The local authentication mechanism MUST:
-
-- verify the user identity locally,
-- protect stored authentication material,
-- respect session expiration and device security policy,
-- support explicit logout,
-- prevent unauthorized access after device loss.
-
-A successful offline login does NOT mean that the client has current server authorization information.
-
-The application MUST therefore continue to enforce the locally cached permission scope.
-
-Server authorization remains authoritative whenever synchronization occurs.
-
----
-
-# 25. Security Boundary
-
-The client MUST be considered untrusted.
-
-The server MUST validate:
-
-- authentication,
-- authorization,
-- entity ownership,
-- project access,
-- emergency access,
-- synchronization operations,
-- versions,
-- signatures and business-critical state,
-- financial data.
-
-Offline permissions are a cached capability for usability, not a replacement for server-side authorization.
-
-The server MUST reject operations that are no longer permitted even if the client previously considered them valid.
-
----
-
-# 26. Synchronization Failure Handling
-
-Synchronization failures MUST preserve user data.
-
-Temporary failures include:
-
-- no network,
-- DNS failure,
-- timeout,
-- backend unavailable,
-- interrupted upload.
-
-These SHOULD result in retryable states.
-
-Permanent or business-level failures include:
-
-- authorization revoked,
-- invalid data,
-- version conflict,
-- deleted server entity,
-- invalid business state.
-
-These MUST be presented as actionable synchronization problems rather than silently discarded.
-
-The user SHOULD be able to identify which work requires attention.
-
----
-
-# 27. Ordering Guarantees
-
-Synchronization MUST preserve dependencies between related entities.
-
-For example:
-
-    Create Project
-           ↓
-    Create Protocol
-           ↓
-    Upload Photo
-
-The system MUST ensure that an operation is not applied before the entities it depends on are available or otherwise resolvable.
-
-The synchronization engine MAY determine an appropriate dependency order.
-
-Operations that cannot currently be processed SHOULD remain pending rather than being discarded.
-
----
-
-# 28. Auditability
-
-Business-critical operations MUST be auditable.
-
-This includes, where applicable:
-
-- creation,
-- modification,
-- deletion,
-- emergency access,
-- signatures,
-- status transitions,
-- synchronization conflicts,
-- authorization-sensitive operations.
-
-Audit records SHOULD contain sufficient information to determine:
-
-- who performed the action,
-- which entity was affected,
-- when it occurred,
-- whether it originated offline,
-- when it reached the server.
-
-Audit information MUST NOT depend exclusively on the client clock.
-
-Server receipt time MUST be available for authoritative server-side auditing.
-
----
-
-# 29. Data Ownership
-
-The server is authoritative for globally synchronized business state.
-
-The client is authoritative only for locally persisted work that has not yet been synchronized.
-
-Therefore:
-
-    Offline:
-    Client owns local pending state
-
-    After successful synchronization:
-    Server owns authoritative global state
-
-The client MUST retain the local identity and synchronization history necessary to continue operating correctly.
-
----
-
-# 30. Architectural Invariants
-
-The following rules are mandatory and MUST NOT be violated by implementation details:
-
-1. `local_id` is generated locally.
-2. `local_id` never changes.
-3. `global_id` is generated exclusively by the server.
-4. `global_id` remains `NULL` while an entity exists only offline.
-5. Local relationships use local identities.
-6. Local changes are persisted together with their outbox operation.
-7. Outbox operations have unique identifiers.
-8. Synchronization operations are idempotent.
-9. Synchronization progress is resumable.
-10. The server MUST detect optimistic concurrency conflicts.
-11. Conflicting business data MUST NOT be silently overwritten.
-12. Synchronizable deletions MUST remain representable until safely synchronized.
-13. Binary assets are synchronized separately from ordinary structured data.
-14. Synchronization MUST never acknowledge data that has not been durably stored.
-15. Completed projects remain referenceable.
-16. Emergency project access is controlled and auditable.
-17. Offline operation MUST NOT bypass server authorization once synchronization occurs.
-18. User-created offline work MUST survive application and device restarts.
-19. Timestamps are stored as timezone-aware UTC timestamps.
-20. Architectural changes affecting these invariants require an explicit architecture decision.
-
----
-
-# 31. Implementation Strategy
-
-The architecture is intentionally divided into stages.
-
-### Stage 1 — Architecture
-
-Define:
-
-- identities,
-- synchronization states,
-- outbox,
-- cursors,
-- conflicts,
-- project access,
-- offline authentication.
-
-### Stage 2 — Persistence
-
-Implement:
-
-- SQLAlchemy domain models,
-- local persistence model,
-- server persistence model,
-- synchronization metadata,
-- indexes and constraints.
-
-### Stage 3 — Synchronization
-
-Implement:
-
-- outbox processing,
-- server synchronization endpoints,
-- idempotency,
-- cursor handling,
-- conflict detection,
-- retry behavior.
-
-### Stage 4 — Binary Synchronization
-
-Implement:
-
-- asset metadata,
-- upload handling,
-- integrity verification,
-- retryable/resumable uploads.
-
-### Stage 5 — Domain Integration
-
-Integrate synchronization into:
-
-- projects,
-- prospects/customers,
-- work orders,
-- protocols,
-- offers,
-- calendar planning,
-- photographs,
-- signatures,
-- documents.
-
-No implementation stage may weaken the architectural invariants defined in this document.
-
----
-
-# 32. Definition of Done for the Synchronization Architecture
-
-The synchronization architecture is considered established when:
-
-- local and global identities are explicitly separated,
-- offline-created entities can exist without a `global_id`,
-- the server can assign global identities during synchronization,
-- local relationships remain stable,
-- all offline changes have durable outbox representation,
-- synchronization operations are idempotent,
-- synchronization can resume after interruption,
-- optimistic concurrency is defined,
-- conflicts are explicit,
-- deletions are synchronizable,
-- binary assets have a separate synchronization strategy,
-- project directory access is separated from full project access,
-- emergency access is controlled and auditable,
-- completed projects remain referenceable,
-- offline authentication is defined,
-- the security boundary between client and server is explicit.
-
-Only after these conditions are satisfied should the corresponding persistence and synchronization implementation be considered complete.
-
-
-## 0.7.6 Synchronization Architecture
-
-### 0.7.6.1 General Principle
-
-GlasHaus uses an offline-first synchronization architecture.
-
-The local application state is authoritative for the user's immediate work while the device is offline.
-
-Server synchronization is asynchronous and must never be a prerequisite for normal application use.
-
-The application MUST remain usable while:
-
-- synchronization is unavailable,
-- synchronization is in progress,
-- individual operations are retrying,
-- individual operations are in conflict,
-- a full resynchronization is required.
-
-Synchronization state is presented to the user as status information, not as a blocking workflow.
-
----
-
-### 0.7.6.2 Background Synchronization
-
-Synchronization runs as a background process independent of the main application workflow.
-
-The user MUST be able to:
-
-- open and use the application,
-- create new entities,
-- edit existing locally available entities,
-- create protocols,
-- add photos,
-- capture signatures,
-- create offers,
-- create calendar requests,
-- navigate between screens,
-
-while synchronization is running.
-
-A synchronization attempt MUST NOT block normal interaction with the application.
-
-The UI MAY display synchronization state such as:
-
-- Offline
-- Synchronizing
-- Up to date
-- Pending changes
-- Conflict requires attention
-- Resynchronization required
-- Synchronization error
-
-These states are informational.
-
-They MUST NOT prevent normal offline-capable operations unless the requested operation explicitly requires data or authorization that is unavailable locally.
-
----
-
-### 0.7.6.3 Server Change Feed
-
-The server provides a persistent change feed.
-
-Every server-side mutation that is relevant to synchronization receives a monotonically increasing `change_sequence`.
-
-The change sequence belongs to the synchronization feed and MUST NOT be stored as part of the domain entity itself.
-
-Conceptually:
-
-    ChangeFeedEntry
-    ----------------------------
-    change_sequence
-    change_id
-    entity_type
-    entity_global_id
-    entity_version
-    operation_type
-    server_created_at
-    server_updated_at
-    server_deleted_at
-    snapshot
-
-Entity versions and change sequences have different meanings.
-
-`entity_version` identifies the version of an individual entity.
-
-`change_sequence` identifies a position in the server-wide synchronization feed.
-
----
-
-### 0.7.6.4 Client Synchronization Cursor
-
-Each device maintains a persistent synchronization cursor.
-
-The cursor represents the highest server change sequence that has been successfully applied to local persistent storage.
-
-The cursor MUST only be advanced in the same local transaction as the corresponding changes.
-
-Conceptually:
-
-    BEGIN
-
-    apply changes
-
-    update sync_cursor
-
-    COMMIT
-
-If the application terminates before the transaction commits, the cursor MUST remain at its previous value.
-
-This guarantees that changes may be delivered more than once without being lost.
-
----
-
-### 0.7.6.5 Pull Synchronization
-
-The client requests changes after its current cursor.
-
-Conceptually:
-
-    POST /api/v1/sync/pull
-
-    {
-        "device_id": "...",
-        "cursor": 18472,
-        "limit": 500
-    }
-
-The server returns an ordered batch of changes.
-
-The client applies changes in ascending `change_sequence` order.
-
-A successful batch is persisted atomically together with the new cursor.
-
-The server MAY return multiple batches using `has_more`.
-
-Large synchronization backlogs MUST NOT block the application.
-
-The synchronization engine processes such batches incrementally in the background.
-
----
-
-### 0.7.6.6 Push Synchronization
-
-Local mutations are persisted in an Outbox before synchronization.
-
-Conceptually:
-
-    Local mutation
-          |
-          v
-       Database
-       /       \
-    Entity     Outbox
-                 |
-                 v
-          Background Sync
-                 |
-                 v
-               Server
-
-A push request contains one or more operations.
-
-Conceptually:
-
-    POST /api/v1/sync/push
-
-Each operation contains at least:
-
-- `operation_id`
-- `entity_type`
-- `entity_local_id`
-- `entity_global_id`
-- `operation_type`
-- `base_version`
-- `snapshot`
-
-A newly created offline entity has:
-
-    entity_global_id = null
-    base_version = 0
-
-The server creates the `global_id` after successful synchronization.
-
-The client MUST persist the returned server identity and version locally before marking the operation as synchronized.
-
----
-
-### 0.7.6.7 Idempotency
-
-Every local mutation has a persistent `operation_id`.
-
-The server MUST treat `operation_id` as an idempotency key.
-
-If a client does not receive the response because of a network failure, it MAY safely retry the same operation.
-
-If the server has already processed the operation, it MUST return the previously established result rather than execute the mutation again.
-
-This protects against:
-
-- network timeouts,
-- lost responses,
-- application crashes,
-- device restarts,
-- repeated synchronization attempts.
-
-The system guarantees at-least-once delivery with idempotent processing rather than relying on exactly-once network delivery.
-
----
-
-### 0.7.6.8 Outbox State Machine
-
-Each Outbox operation follows an explicit state machine.
-
-    pending
-       |
-       v
-    processing
-       |
-       +-------------> synced
-       |
-       +-------------> conflict
-       |
-       +-------------> rejected
-       |
-       +-------------> retryable_error
-                              |
-                              v
-                           pending
-
-#### `pending`
-
-The operation is persisted locally and awaits synchronization.
-
-#### `processing`
-
-The synchronization engine is currently attempting to transmit the operation.
-
-#### `synced`
-
-The server accepted the operation and the complete server response has been persisted locally.
-
-#### `conflict`
-
-The server rejected the operation because the client's `base_version` is no longer current.
-
-The operation MUST NOT be automatically retried.
-
-#### `rejected`
-
-The operation was permanently rejected, for example because of:
-
-- invalid data,
-- insufficient permission,
-- invalid reference,
-- unsupported operation.
-
-The operation MUST NOT be automatically retried.
-
-#### `retryable_error`
-
-The operation failed for a temporary reason and MAY be retried.
-
-Examples include:
-
-- temporary server failure,
-- timeout,
-- transient network error.
-
----
-
-### 0.7.6.9 Crash Recovery
-
-`processing` MUST NOT be a permanent state.
-
-Each processing attempt records a local processing timestamp or equivalent lease information.
-
-After application restart, operations whose processing lease has expired are returned to `pending`.
-
-This ensures that an application crash cannot permanently strand an Outbox operation.
-
----
-
-### 0.7.6.10 Conflict Handling
-
-A conflict is an explicit application state.
-
-The server returns at least:
-
-- `operation_id`
-- `entity_global_id`
-- `client_base_version`
-- `server_version`
-- `server_snapshot`
-- relevant server timestamps
-
-The client preserves the local operation and the server state.
-
-Conflict resolution is a separate operation and MUST NOT happen implicitly as part of an ordinary retry.
-
-Possible future resolution strategies include:
-
-- discard local change,
-- merge changes,
-- replace local change with server state,
-- create a new mutation based on the resolved state.
-
----
-
-### 0.7.6.11 Pull Idempotency
-
-Pull operations MUST also be idempotent.
-
-A server change MAY be delivered more than once.
-
-The client MUST safely handle already-applied changes.
-
-Entity versions are used to prevent an older entity state from overwriting a newer local state.
-
-For example:
-
-    local version = 9
-    incoming version = 8
-
-The incoming version MUST NOT replace version 9.
-
----
-
-### 0.7.6.12 Tombstones
-
-Deletes are represented through tombstones during synchronization.
-
-A delete change contains the relevant entity identity, version and deletion timestamp.
-
-Local deletion MUST NOT immediately destroy the information required to recognize an old or repeated synchronization operation.
-
-Tombstone retention is a server-side lifecycle concern and will be defined separately.
-
----
-
-### 0.7.6.13 Cursor Expiration
-
-The server MAY eventually remove old entries from the change feed.
-
-If a client presents a cursor that is older than the retained synchronization history, the server returns:
-
-    cursor_expired
-
-The client MUST NOT simply advance the cursor.
-
-Instead, the synchronization state becomes:
-
-    resync_required
-
-A full authorized resynchronization is then performed.
-
----
-
-### 0.7.6.14 Full Resynchronization
-
-A full resynchronization creates a new consistent server baseline for the device.
-
-Conceptually:
-
-    resync_required
-          |
-          v
-       resyncing
-          |
-          v
-    applying snapshot
-          |
-          v
-         idle
-
-A full resynchronization MUST NOT silently delete pending local Outbox operations.
-
-Pending local mutations remain separate from the downloaded server baseline and require subsequent synchronization or conflict handling.
-
----
-
-### 0.7.6.15 Access and Assignment Resynchronization
-
-The normal change cursor MUST NOT be the only mechanism for acquiring data that becomes newly authorized.
-
-For example, if an employee is newly assigned to a project whose previous changes are already behind the employee's cursor, the project MUST still become available to the device.
-
-Therefore GlasHaus supports an additional access/assignment resynchronization mechanism.
-
-This mechanism may provide:
-
-- full authorized entities,
-- minimal authorized basis records,
-- newly assigned projects,
-- newly granted access.
-
-It complements the normal change feed and does not replace it.
-
----
-
-### 0.7.6.16 Authorization
-
-Synchronization is always evaluated in the context of:
-
-- authenticated user,
-- authorized device,
-- applicable permissions,
-- project assignments,
-- available data access level.
-
-The server MUST NOT expose arbitrary change-feed entries simply because their `change_sequence` is newer than the client's cursor.
-
-A client may receive only data it is authorized to access.
-
----
-
-### 0.7.6.17 Basis Records
-
-GlasHaus supports minimal basis records for exceptional access scenarios.
-
-A basis record may contain only the information required to identify or reach a project, such as:
-
-- project identity,
-- project name,
-- site address,
-- minimal metadata.
-
-A basis record does not imply full project access.
-
-This mechanism allows controlled access to projects that are not part of the employee's normal assignment without requiring all project data to be stored locally on every device.
-
----
-
-### 0.7.6.18 Background Synchronization and User Experience
-
-Synchronization MUST NOT block the application UI.
-
-The following operations are explicitly independent from synchronization:
-
-    User action
-        |
-        v
-    Local validation
-        |
-        v
-    Local transaction
-        |
-        +----> Local entity state
-        |
-        +----> Outbox operation
-        |
-        v
-    User may continue immediately
-
-The background synchronization engine subsequently processes the Outbox.
-
-The user does not need to wait for:
-
-- server acknowledgement,
-- global ID assignment,
-- server timestamps,
-- conflict checking,
-- change-feed processing.
-
-The application MUST clearly distinguish between:
+The client distinguishes:
 
 - locally saved,
-- synchronized,
 - pending synchronization,
+- synchronized,
+- retryable failure,
 - conflict,
 - rejected.
 
-A locally saved operation is immediately available to the user even when it has not yet reached the server.
+Detailed behavior is defined in `SYNC.md`.
 
 ---
 
-### 0.7.6.19 Network State vs Synchronization State
+## 8. Identity
 
-Network connectivity and synchronization state are separate concepts.
+Offline-capable entities require stable client-side identity.
 
-Examples:
+The exact identifier scheme belongs to the data model.
 
-    offline
-    online + syncing
-    online + idle
-    online + conflict
-    online + retryable error
-    online + resync required
+The identity must:
 
-The application MUST NOT infer that a connected device is synchronized.
+- exist before synchronization,
+- remain stable,
+- preserve local relationships,
+- remain resolvable after synchronization.
 
-Likewise, an offline device is not considered to be in an error state merely because it cannot synchronize.
+The repository's UUIDv7 direction is compatible with this principle; the final identity model belongs in the domain and synchronization specifications.
 
 ---
 
-### 0.7.6.20 Synchronization API
+## 9. Security Boundary
 
-The initial synchronization API consists conceptually of:
+The client is untrusted.
 
-    POST /api/v1/sync/push
-    POST /api/v1/sync/pull
-    POST /api/v1/sync/resync
+The server independently validates:
 
-An additional access/assignment resynchronization endpoint MAY be provided.
+- authentication,
+- authorization,
+- resource access,
+- synchronization operations,
+- entity versions,
+- business-critical state,
+- financial operations,
+- signatures and document state.
 
-Push and pull have intentionally different semantics.
+Offline authentication and authorization are cached usability mechanisms, not replacements for server-side authority.
 
-Push means:
-
-    "Please process this local mutation."
-
-Pull means:
-
-    "Provide server-side changes after this synchronization position."
-
-They MUST NOT be represented as one generic event operation.
+See `SECURITY.md`.
 
 ---
 
-### 0.7.6.21 Server Timestamps
+## 10. Documents and Sensitive Content
 
-Server-side timestamps are authoritative for server-controlled temporal information.
+Sensitive content is not protected solely by transport encryption.
 
-The server creates timestamps such as:
+GlasHaus uses layered protection:
 
-- `server_created_at`
-- `server_updated_at`
-- `server_deleted_at`
+```text
+Client
+  │
+  │ TLS
+  ▼
+API
+  │
+  ├── application-level encryption where required
+  ▼
+PostgreSQL / Object Storage
+  │
+  └── infrastructure/storage encryption
+```
 
-Client device time MUST NOT be used as the authoritative ordering mechanism for synchronization.
-
-The device clock may be unreliable or deliberately incorrect.
-
-Local time may still be used for:
-
-- user interface presentation,
-- local sorting where appropriate,
-- diagnostics,
-- locally meaningful timestamps.
-
----
-
-### 0.7.6.22 Local Sequence
-
-Each device maintains a monotonic local sequence for locally generated mutations.
-
-The local sequence is independent of:
-
-- server `change_sequence`,
-- entity `version`,
-- device clock time.
-
-It exists to provide deterministic ordering of locally generated operations and to avoid relying on potentially incorrect device clocks.
-
-The local sequence MUST NOT be interpreted as a globally meaningful ordering.
+See `CRYPTOGRAPHY.md`.
 
 ---
 
-### 0.7.6.23 Background Sync Failure Isolation
+## 11. Auditability
 
-A failed synchronization operation MUST NOT automatically block unrelated local work.
+Business-critical server-side actions must be auditable.
 
-For example:
+Examples include:
 
-    Protocol A  -> synced
-    Photo A     -> synced
-    Signature A -> synced
-    Offer A     -> conflict
-    Calendar A  -> synced
+- authorization-sensitive access,
+- emergency access,
+- document operations,
+- signatures,
+- important status transitions,
+- financial changes,
+- security events,
+- synchronization conflicts.
 
-The conflict on the offer MUST NOT prevent the user from continuing to work with the protocol, photos, signature or calendar request.
-
-Likewise, a temporary network failure MUST NOT make the application read-only.
-
----
-
-### 0.7.6.24 Sync State Visibility
-
-The synchronization engine exposes status information to the application UI.
-
-The UI may display:
-
-    Offline
-    Synchronizing...
-    3 changes pending
-    Up to date
-    Conflict requires attention
-    Synchronization error
-    Resynchronization required
-
-The exact visual design is a UI concern.
-
-The synchronization architecture defines only the semantic states.
-
-The UI MUST NOT require the user to manually initiate synchronization for normal operation.
-
-Manual synchronization MAY be offered as an additional action.
+Audit records must not contain unnecessary sensitive payloads.
 
 ---
 
-### 0.7.6.25 Core Invariants
+## 12. Architectural Decision Boundary
 
-The following invariants are mandatory:
+An explicit architecture decision is required before implementation when a change materially affects:
 
-1. Local application use does not depend on server availability.
-2. Local mutations are persisted before entering the Outbox.
-3. Every Outbox mutation has a unique persistent `operation_id`.
-4. Server-created `global_id` values are authoritative.
-5. Entity versions are server-controlled.
-6. Server timestamps are authoritative.
-7. Change sequences are server-controlled.
-8. Synchronization cursors are advanced only after successful local persistence.
-9. Duplicate delivery is safe.
-10. Failed responses may be retried safely.
-11. Conflicts are explicit states.
-12. Permanent rejections are not automatically retried.
-13. Resynchronization does not silently discard pending local work.
-14. Newly granted access cannot be hidden permanently behind an old cursor.
-15. Synchronization runs in the background.
-16. Synchronization status is observable but not normally blocking.
-17. Network availability and synchronization state remain separate.
+- authentication/session architecture,
+- authorization,
+- encryption/key management,
+- data-model assumptions affecting synchronization,
+- synchronization protocol,
+- document security,
+- external integrations,
+- deployment topology,
+- introduction of a separate service,
+- irreversible retention/deletion behavior.
+
+---
+
+## 13. Target Architecture vs Current Implementation
+
+This document describes the target architecture.
+
+The repository currently contains only a subset of the architecture.
+
+Authentication, complete domain logic, application-level encryption, document storage and synchronization are not implied to exist merely because they are described here.
+
+Progress is tracked in `Roadmap.md`.
+
+---
+
+## 14. Architecture Invariants
+
+1. The server is authoritative for synchronized server state.
+2. Pending local work may remain client-owned until accepted by the server.
+3. Local work survives application/device restart.
+4. Server authorization cannot be bypassed by offline state.
+5. Sensitive-data protection is layered.
+6. Business logic remains independent of transport and persistence.
+7. Synchronization never silently discards user work.
+8. Unsafe conflicts are explicit.
+9. Binary assets use dedicated transfer and integrity handling.
+10. Changes to these invariants require an explicit architecture decision.
