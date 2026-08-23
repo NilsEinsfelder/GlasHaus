@@ -2,12 +2,11 @@
 
 ## 1. Purpose
 
-This document defines the mandatory rules for AI-assisted development
-within the GlasHaus repository.
+This document defines the mandatory rules for AI-assisted development within the GlasHaus repository.
 
 AI-generated code is treated exactly like human-written production code.
 
-All changes must therefore be:
+Every change must therefore be:
 
 - understandable
 - maintainable
@@ -17,291 +16,379 @@ All changes must therefore be:
 - lint-clean
 - type-safe
 
-Detailed testing rules are defined in `docs/TESTING.md`.
+Detailed testing requirements are defined in `docs/TESTING.md`.
 
 ---
 
-## 2. Core Development Principles
+## 2. Source of Truth
 
-### 2.1 Python-first Backend
+The following documents define the current architectural direction:
+
+1. `docs/ARCHITECTURE.md`
+2. `docs/SECURITY.md`
+3. `docs/CRYPTOGRAPHY.md`
+4. `docs/SYNC.md`
+5. `docs/Roadmap.md`
+
+If another document conflicts with these documents, the conflict must be resolved before implementing architectural changes.
+
+The architecture documents describe target behavior. They do not imply that the functionality is already implemented.
+
+---
+
+## 3. Core Development Principles
+
+### 3.1 Python-first Backend
 
 The backend is implemented primarily in Python.
 
-The current backend technology stack includes:
+Current backend foundation:
 
-- Python
+- Python 3.14
 - FastAPI
 - SQLAlchemy
 - Alembic
-- PostgreSQL
+- PostgreSQL in production
+- SQLite for development/tests where useful
 
-Technology decisions must be documented before introducing major
-architectural dependencies.
+Major technology changes require an explicit architectural decision.
+
+### 3.2 Minimal Complexity
+
+Do not introduce abstractions merely because they may be useful later.
+
+Prefer:
+
+- simple modules,
+- explicit dependencies,
+- small interfaces,
+- concrete implementations,
+- incremental evolution.
+
+Generic frameworks for synchronization, authorization, encryption or domain behavior must not be built before a real use case requires them.
+
+### 3.3 Vertical Slices
+
+Prefer completing one coherent workflow over implementing many disconnected subsystems.
+
+A vertical slice should normally include the required:
+
+- domain behavior,
+- persistence,
+- API,
+- tests,
+- authorization,
+- security considerations.
 
 ---
 
-### 2.2 Code Quality
+## 4. Architecture and Dependency Direction
 
-All production code must:
+The backend follows this conceptual dependency direction:
 
-- pass Ruff
-- pass MyPy
-- follow the repository formatting rules
-- use meaningful names
-- use appropriate type annotations
-- avoid unnecessary complexity
-- follow separation of concerns
+```text
+API / Transport
+      ↓
+Application Services
+      ↓
+Domain
+      ↓
+Infrastructure
+```
 
-No code may intentionally bypass configured quality gates without
-documented justification.
+Infrastructure contains technical implementations such as:
+
+- database access,
+- object storage,
+- mail,
+- cryptographic providers,
+- external integrations.
+
+Domain logic must not depend directly on FastAPI, HTTP requests, SQLAlchemy sessions or external service clients.
+
+API endpoints must remain thin.
+
+Business rules belong in application/domain code.
+
+Database access belongs in infrastructure/data-access components.
 
 ---
 
-### 2.3 Testing
+## 5. Code Quality
 
-Production behavior must be covered by appropriate automated tests.
+Production code must:
 
-Testing requirements are defined in:
+- pass Ruff,
+- pass Ruff formatting,
+- pass MyPy,
+- use meaningful names,
+- use appropriate type annotations,
+- avoid unnecessary complexity,
+- follow separation of concerns.
 
-docs/TESTING.md
+Quality gates must not be bypassed without documented justification.
 
-When AI introduces or modifies production behavior, the corresponding
-tests must be created or updated as part of the same change.
+---
 
-Tests must validate behavior rather than merely increasing coverage.
+## 6. Testing
 
-## 3. Documentation
-### 3.1 Functions
+Every production behavior introduced or changed by AI must have appropriate automated tests.
 
-Every production function must include:
+Tests must validate behavior rather than merely increase coverage.
 
-type annotations
-a return type annotation
-a docstring where appropriate
+Existing tests must not be weakened or removed merely to make a change pass.
 
-Public functions and APIs must be documented.
+Critical security, persistence, synchronization and domain behavior requires explicit tests.
 
-Docstrings should follow Google-style conventions.
+The repository's `docs/TESTING.md` is part of the Definition of Done.
 
-### 3.2 Complex Logic
+---
 
-Non-trivial logic must contain concise comments explaining the reason
-for the implementation where the code itself is not sufficiently clear.
+## 7. Documentation
 
-Comments must explain intent rather than restating obvious code.
+Public functions and APIs must be documented where appropriate.
 
-### 3.3 Architectural Decisions
+Production functions require:
 
-Major architectural decisions must be documented before or together with
-their implementation.
+- type annotations,
+- return type annotations,
+- clear naming,
+- concise docstrings where appropriate.
 
-Examples include:
+Complex logic should contain comments explaining intent where the code alone is insufficient.
 
-authentication architecture
-encryption architecture
-database architecture
-offline synchronization
-external integrations
-document storage
-key management
+Comments must not merely restate the implementation.
 
-## 4. Security First
+Architectural decisions must be documented before or together with implementation.
 
-Security requirements apply to every component of GlasHaus.
+---
 
-### 4.1 Secrets
+## 8. Database Rules
 
-The following must never be committed to the repository:
+Production database schema changes MUST use Alembic migrations.
 
-passwords
-API keys
-private keys
-access tokens
-refresh tokens
-database credentials
-encryption keys
-production secrets
+Never rely on:
 
-Configuration containing secrets must use an appropriate secure mechanism,
-such as environment variables or a dedicated secret-management system.
+```python
+Base.metadata.create_all()
+```
 
-### 4.2 Cryptography
+for production schema management.
 
-Sensitive information must use established, modern cryptographic mechanisms
-appropriate to the specific use case.
+`create_all()` may be used by isolated development/test helpers when appropriate.
 
-Cryptographic algorithms must not be selected merely because they are
-familiar or convenient.
+Production database changes must be reproducible from migrations.
 
-Password storage must use password-specific password hashing mechanisms.
+Database constraints should be enforced at the database layer where practical.
 
-Encryption key management must be separated from encrypted application data.
+---
 
-Cryptographic decisions must be documented before implementation.
+## 9. Security First
 
-### 4.3 Authentication and Authorization
+Security applies to every component.
 
-Authentication and session management must use a documented secure
-architecture.
+Never commit:
 
-Authorization must support the GlasHaus permission model, including:
+- passwords,
+- API keys,
+- private keys,
+- access tokens,
+- refresh tokens,
+- database credentials,
+- encryption keys,
+- production secrets.
 
-authentication
-RBAC
-ABAC
-resource-level authorization
+Secrets must be supplied through secure configuration or secret-management infrastructure.
 
-Authentication must never be treated as authorization.
+Authentication and authorization are separate concerns.
 
-### 4.4 Sensitive Data
+The client must never be treated as the final authorization authority.
 
-Personally identifiable information, financial information, documents,
-credentials and other sensitive information must be handled according to
-the GlasHaus security architecture.
+---
 
-Logging must never expose sensitive information.
+## 10. Cryptography
 
-## 5. Architecture
-### 5.1 Separation of Concerns
+Cryptographic implementations must use established, reviewed primitives and libraries.
 
-The backend must maintain clear separation between:
+Never invent cryptographic algorithms.
 
-API
- ↓
-Service
- ↓
-Repository
- ↓
-Database
+Encryption decisions must follow `docs/CRYPTOGRAPHY.md`.
 
-Controllers/API endpoints must not contain business logic.
+Password storage must use password-specific password hashing.
 
-Business rules belong in the appropriate service/domain layer.
+Encryption keys must be separated from encrypted application data.
 
-Database access belongs in repository/data-access components where
-appropriate.
+Crypto implementation must not begin before the corresponding architecture decision has been documented.
 
-### 5.2 Dependency Direction
+---
 
-Dependencies should point toward well-defined abstractions.
+## 11. Sensitive Data
 
-Infrastructure-specific implementation details must not unnecessarily
-leak into business logic.
+Sensitive information must be handled according to:
 
-### 5.3 Modularity
+- `docs/SECURITY.md`
+- `docs/CRYPTOGRAPHY.md`
 
-Components should have a single clear responsibility.
+Logs must never contain unnecessary sensitive information.
 
-Large modules must be split when doing so improves maintainability,
-testability or security.
+Do not expose:
 
-## 6. Offline Synchronization
+- passwords,
+- tokens,
+- encryption keys,
+- document contents,
+- unnecessary personal data.
 
-GlasHaus is designed as an offline-capable system.
+---
 
-Data models participating in synchronization must provide the information
-required for deterministic synchronization.
+## 12. Authentication and Authorization
 
-Depending on the entity, this may include:
+Authentication establishes identity.
 
-stable identifiers
-version information
-timestamps
-synchronization state
-conflict information
-deletion/tombstone information
+Authorization determines whether an authenticated actor may perform an action.
 
-Offline synchronization behavior must be explicitly defined for each
-synchronized entity.
+The server is authoritative for:
 
-Conflict resolution must never silently overwrite data without a defined
-policy.
+- authentication state,
+- authorization,
+- resource access,
+- device access,
+- synchronization operations.
 
-## 7. Database and Data Integrity
+Offline permissions are usability mechanisms and do not replace server authorization.
 
-Database changes must be implemented through Alembic migrations.
+---
 
-Production database schema changes must never rely on manual undocumented
-database modifications.
+## 13. Offline Synchronization
 
-Data integrity constraints should be enforced at the appropriate layer,
-preferably as close to the database as practical.
+GlasHaus is designed to support offline field workflows.
 
-## 8. API Design
+However, synchronization is implemented incrementally.
 
-APIs must:
+An entity must not become synchronizable merely because a generic synchronization framework exists.
 
-validate input
-validate authorization
-return documented responses
-avoid leaking internal implementation details
-handle errors consistently
-use appropriate HTTP semantics
+Before synchronizing an entity, define:
 
-API endpoints must remain thin and delegate business logic to services.
+- identity,
+- lifecycle,
+- authorization scope,
+- versioning,
+- deletion semantics,
+- conflict policy,
+- retention requirements.
 
-## 9. Error Handling
+Synchronization must never silently overwrite user work.
+
+See `docs/SYNC.md`.
+
+---
+
+## 14. API Design
+
+API endpoints must:
+
+- validate input,
+- validate authorization,
+- return documented responses,
+- use appropriate HTTP semantics,
+- avoid leaking internal implementation details,
+- delegate business behavior to application/domain layers.
+
+Endpoints must remain thin.
+
+---
+
+## 15. Error Handling
 
 Errors must be handled deliberately.
 
 Do not:
 
-silently ignore exceptions
-expose stack traces to users
-expose secrets or sensitive information
-use overly broad exception handling without justification
+- silently ignore exceptions,
+- expose stack traces,
+- expose secrets,
+- use broad exception handling without justification.
 
-Errors should be logged appropriately while keeping sensitive information
-out of logs.
+User-facing responses must not expose internal implementation details.
 
-## 10. AI-Assisted Development
+Logs may contain diagnostic information only when appropriate and safe.
+
+---
+
+## 16. AI-Assisted Development
 
 When AI contributes code:
 
-The complete implementation must be provided unless the task explicitly
-requests a partial implementation.
-No placeholders may be introduced unless explicitly requested.
-Existing project architecture must be respected.
-Existing tests must not be weakened or removed merely to make a change
-pass.
-New behavior must include appropriate tests.
-Existing tests must continue to pass.
-Ruff must pass.
-MyPy must pass.
-Documentation must be updated when behavior or architecture changes.
-Security implications must be considered for security-sensitive changes.
+1. inspect the existing implementation first,
+2. respect the current architecture,
+3. identify affected files,
+4. implement the complete requested behavior,
+5. add or update tests,
+6. update documentation where required,
+7. run quality checks,
+8. review the resulting diff.
 
-AI must not invent dependencies, APIs or configuration options without
-verification.
+AI must not invent:
 
-## 11. Change Discipline
+- dependencies,
+- APIs,
+- configuration options,
+- security guarantees,
+- database behavior.
+
+Dependencies and external APIs must be verified before use.
+
+---
+
+## 17. Change Discipline
 
 Changes should be:
 
-focused
-reviewable
-minimal
-reversible where practical
+- focused,
+- reviewable,
+- minimal,
+- reversible where practical.
 
-Unrelated refactoring must not be mixed into feature changes unless
-explicitly justified.
+Do not mix unrelated refactoring into a feature change without justification.
 
-Existing behavior must not be changed unintentionally.
+Do not rewrite working code merely for stylistic preference.
 
-## 12. Definition of Done
+Preserve existing behavior unless the change explicitly requires otherwise.
 
-AI-assisted production changes are considered complete only when:
+---
 
-implementation is complete
-appropriate tests exist
-tests pass
-Ruff passes
-MyPy passes
-documentation is updated where required
-security implications have been considered
-no secrets are introduced
-database migrations exist where required
-the working tree contains only intentional changes
+## 18. Architectural Decision Triggers
 
-The applicable requirements in docs/TESTING.md are part of the
-Definition of Done.
+An explicit architecture review is required before introducing or substantially changing:
+
+- authentication,
+- authorization,
+- encryption,
+- key management,
+- synchronization,
+- document storage,
+- external integrations,
+- deployment topology,
+- data retention/deletion,
+- separate services,
+- irreversible data migrations.
+
+---
+
+## 19. Definition of Done
+
+An AI-assisted production change is complete only when:
+
+- implementation is complete,
+- appropriate tests exist,
+- tests pass,
+- Ruff passes,
+- formatting passes,
+- MyPy passes,
+- documentation is updated where required,
+- security implications have been considered,
+- no secrets were introduced,
+- database migrations exist where required,
+- the working tree contains only intentional changes.
+
+The applicable requirements in `docs/TESTING.md` are part of the Definition of Done.

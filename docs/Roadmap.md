@@ -2,300 +2,337 @@
 
 ## 1. Purpose
 
-This roadmap separates long-term product vision from near-term engineering work.
+This roadmap defines the implementation order for GlasHaus.
 
-The repository is currently at foundation stage.
+It separates:
 
-Architecture documents describe target behavior and are not evidence that the described functionality is already implemented.
+- current implementation status,
+- engineering priorities,
+- long-term product vision.
+
+Architecture documents describe the target system. They do not imply that the corresponding functionality is implemented.
 
 ---
 
-## 2. Current Status
+# 2. Current Status
 
-Current repository foundations include:
+GlasHaus is currently at the backend-foundation stage.
 
-- backend foundation,
-- FastAPI foundation,
+Implemented foundations include:
+
+- Python/FastAPI application,
 - SQLAlchemy persistence foundation,
-- initial device/synchronization models,
-- development and quality tooling.
+- UUIDv7 identifier generation,
+- initial Device model,
+- initial synchronization-state model,
+- automated tests,
+- Ruff,
+- MyPy,
+- pytest,
+- Alembic dependency.
 
-The following are not yet considered implemented merely because they appear in the architecture:
+Not yet implemented:
 
-- complete business domain,
+- business domain,
 - authentication,
 - authorization,
 - application-level encryption,
-- encrypted document storage,
+- key management,
+- document storage,
 - document workflows,
-- offline synchronization,
-- mobile client.
+- mobile client,
+- synchronization engine.
+
+The existing Device and SyncState models are treated as foundation metadata and are not currently expanded into a generic synchronization engine.
 
 ---
 
-# 3. Engineering Roadmap
+# 3. Phase 1 — Backend Foundation
 
-## Phase 0 — Architecture Reset
+## Goal
 
-- [ ] consolidate `ARCHITECTURE.md`
-- [ ] add `SECURITY.md`
-- [ ] add `CRYPTOGRAPHY.md`
-- [ ] add `SYNC.md`
-- [ ] rewrite roadmap around implementation order
-- [ ] review `AI_RULES.md` for obsolete architecture references
-- [ ] remove duplicate/obsolete architecture documentation
+Create a clean, reproducible backend foundation.
 
-**Exit:** architecture documents are consistent and clearly distinguish target architecture from implementation status.
+### Tasks
 
----
+- [x] FastAPI application
+- [x] basic API routing
+- [x] configuration layer
+- [x] SQLAlchemy foundation
+- [x] development/test database support
+- [ ] production PostgreSQL verification
+- [ ] Alembic migration workflow
+- [ ] database integration tests
+- [ ] logging foundation
+- [ ] consistent application error handling
+- [ ] CI quality gates
 
-## Phase 1 — Security and Cryptography Foundation
+### Exit Criteria
 
-- [ ] define data classification
-- [ ] define authentication/session model
-- [ ] define authorization model
-- [ ] define device trust
-- [ ] define audit model
-- [ ] choose cryptographic library
-- [ ] implement key-provider abstraction
-- [ ] implement versioned encryption envelope
-- [ ] implement encrypted document storage path
-- [ ] define backup/key recovery
-- [ ] add security and cryptography tests
-
-**Exit:** one real sensitive-data path is encrypted, authorized, audited and tested end-to-end.
+The backend can be installed, started, migrated and tested reproducibly.
 
 ---
 
-## Phase 2 — Domain Model and Persistence
+# 4. Phase 2 — Security Architecture
 
-Initial candidates:
+## Goal
 
-- [ ] Organization
-- [ ] User
-- [ ] Device
-- [ ] Customer / Prospect
-- [ ] Project
-- [ ] Work Order
-- [ ] Document
-- [ ] Document Version
+Define the security model before implementing sensitive application behavior.
 
-For each entity:
+### Tasks
 
-- [ ] business invariants
-- [ ] lifecycle
-- [ ] authorization scope
-- [ ] persistence model
-- [ ] audit requirements
-- [ ] offline-capability decision
-
-**Exit:** the first coherent business workflow persists without speculative generic abstractions.
-
----
-
-## Phase 3 — Authentication and Authorization
-
-- [ ] user authentication
-- [ ] password hashing
-- [ ] session/token lifecycle
-- [ ] 2FA
-- [ ] role/permission model
+- [ ] data classification
+- [ ] authentication architecture
+- [ ] session/token architecture
+- [ ] authorization model
+- [ ] RBAC/ABAC boundary
 - [ ] resource authorization
-- [ ] device registration/revocation
-- [ ] audit events
-- [ ] security tests
+- [ ] device trust model
+- [ ] audit model
+- [ ] threat model
 
-**Exit:** authenticated users can access only authorized resources.
+### Exit Criteria
+
+Security boundaries are explicit and implementation decisions are documented.
 
 ---
 
-## Phase 4 — First Usable Web MVP
+# 5. Phase 3 — Cryptography
 
-Recommended vertical slice:
+## Goal
+
+Protect sensitive stored and transmitted content correctly.
+
+### Tasks
+
+- [ ] select cryptographic libraries
+- [ ] define encryption envelope
+- [ ] define key hierarchy
+- [ ] define key storage/KMS boundary
+- [ ] define key rotation
+- [ ] implement crypto provider abstraction
+- [ ] implement encrypted document proof-of-concept
+- [ ] implement integrity verification
+- [ ] define backup/key recovery
+- [ ] add cryptography tests
+
+### Exit Criteria
+
+One real sensitive document path is protected end-to-end and tested.
+
+---
+
+# 6. Phase 4 — First Domain Model
+
+## Goal
+
+Implement the first real business workflow.
+
+Initial direction:
 
 ```text
-User
-  ↓
 Customer
-  ↓
+   ↓
 Project
-  ↓
+   ↓
 Work Order
-  ↓
+   ↓
 Document
 ```
 
-- [ ] Next.js foundation
+The exact first entity may be adjusted during domain modeling.
+
+For each entity define:
+
+- identity,
+- lifecycle,
+- invariants,
+- persistence,
+- authorization,
+- audit requirements,
+- sensitivity classification,
+- offline capability.
+
+### Exit Criteria
+
+At least one complete domain workflow exists without speculative synchronization infrastructure.
+
+---
+
+# 7. Phase 5 — Authentication and Authorization
+
+## Goal
+
+Make the first domain workflow secure.
+
+### Tasks
+
+- [ ] user identity
 - [ ] authentication
+- [ ] password hashing
+- [ ] session lifecycle
+- [ ] 2FA
+- [ ] role permissions
+- [ ] resource authorization
+- [ ] device registration
+- [ ] device revocation
+- [ ] authorization tests
+- [ ] audit events
+
+### Exit Criteria
+
+The server reliably determines who may access and modify every implemented protected resource.
+
+---
+
+# 8. Phase 6 — Browser MVP
+
+## Goal
+
+Deliver the first usable web workflow.
+
+### Tasks
+
+- [ ] Next.js foundation
+- [ ] authentication UI
 - [ ] protected routes
 - [ ] customer/project views
 - [ ] work-order workflow
-- [ ] document upload/download
-- [ ] authorization UI
+- [ ] document workflow
+- [ ] API integration
 - [ ] end-to-end tests
 
-Do not build every planned feature before this slice works.
+### Exit Criteria
+
+A real user can complete the first core workflow through the browser.
 
 ---
 
-## Phase 5 — Document and Communication Workflows
+# 9. Phase 7 — Mobile Foundation
 
-- [ ] encrypted document versions
-- [ ] document metadata
-- [ ] secure downloads
-- [ ] PDF generation
-- [ ] document preview
-- [ ] controlled document sharing
-- [ ] outbound mail integration
-- [ ] TLS mail transport
-- [ ] optional encrypted delivery
-- [ ] retention/deletion policy
+## Goal
 
----
+Prepare the field client without prematurely implementing generic sync.
 
-## Phase 6 — Mobile Foundation
+### Tasks
 
-- [ ] select React Native or Flutter
+- [ ] select mobile framework
 - [ ] authentication
 - [ ] secure local key storage
 - [ ] encrypted local database
 - [ ] local domain persistence
+- [ ] offline UX
 - [ ] camera/assets
-- [ ] basic offline UX
-- [ ] local authorization cache
 
-Do not implement the complete synchronization engine yet.
+### Exit Criteria
+
+The mobile client can securely work with locally available data.
 
 ---
 
-## Phase 7 — Synchronization MVP
+# 10. Phase 8 — Synchronization MVP
 
-Start with one or two real entities.
+## Goal
+
+Synchronize one real offline-capable workflow.
+
+### Tasks
 
 - [ ] local identity
-- [ ] outbox
+- [ ] atomic local mutation + outbox
 - [ ] push
 - [ ] idempotency
 - [ ] optimistic concurrency
 - [ ] pull
-- [ ] cursor
-- [ ] explicit conflicts
-- [ ] retry
+- [ ] durable cursor
+- [ ] conflict handling
+- [ ] retries
 - [ ] deletion/tombstones
-- [ ] background sync
-- [ ] sync status UI
+- [ ] binary asset transfer
+- [ ] resynchronization
 
-**Exit:** a real offline workflow survives restart, retry and connectivity loss without silent data loss.
+### Exit Criteria
+
+A real offline workflow survives:
+
+- application restart,
+- device restart,
+- network loss,
+- retry,
+- server failure,
+
+without silent data loss.
 
 ---
 
-## Phase 8 — Domain Expansion
+# 11. Phase 9 — Domain Expansion
 
-Incrementally add:
+Potential modules:
 
+- [ ] customers
+- [ ] projects
+- [ ] work orders
 - [ ] protocols
 - [ ] photographs
+- [ ] documents
 - [ ] signatures
 - [ ] offers
-- [ ] calendar/planning
+- [ ] scheduling
 - [ ] change orders
-- [ ] warranty work
-- [ ] emergency project access
-- [ ] completed/archived projects
+- [ ] warranty workflows
+- [ ] emergency access
 
-Each offline-capable entity defines its own synchronization semantics.
+Each module receives explicit authorization, security and synchronization semantics.
 
 ---
 
-## Phase 9 — Advanced Document Automation
+# 12. Phase 10 — Document Automation
 
+- [ ] PDF generation
+- [ ] document templates
 - [ ] OCR
 - [ ] searchable documents
-- [ ] advanced PDF workflows
-- [ ] signature validation
-- [ ] document templates
-- [ ] automated document generation
+- [ ] signature workflows
+- [ ] document sharing
+- [ ] retention/deletion workflows
 
 ---
 
-## Phase 10 — Integrations and Automation
+# 13. Phase 11 — External Integrations
 
 Only after the core product is stable:
 
 - [ ] IDS Connect
 - [ ] supplier integrations
+- [ ] ZUGFeRD/e-invoicing
+- [ ] XML export
 - [ ] pricing workflows
-- [ ] XML/export integrations
 - [ ] notifications
-- [ ] QR/RFID
-- [ ] IoT integrations
+
+---
+
+# 14. Phase 12 — Advanced Automation
+
+Potential future capabilities:
+
+- [ ] RFID
+- [ ] QR workflows
+- [ ] IoT
+- [ ] AI-assisted estimation
 - [ ] AI-assisted pricing
+- [ ] recommendation systems
+
+These remain product vision until explicitly prioritized.
 
 ---
 
-# 4. Product Vision
+# 15. Sequencing Rules
 
-Long-term goals may include:
-
-- complete customer/project management,
-- mobile field operations,
-- offline-first workflows,
-- document management,
-- signatures,
-- scheduling,
-- supplier integration,
-- pricing automation,
-- RFID/QR/IoT workflows,
-- AI-assisted estimation.
-
-These are product goals, not current engineering commitments.
-
----
-
-# 5. Sequencing Rules
-
-1. Security architecture precedes sensitive-data implementation.
-2. Domain modeling precedes generic synchronization.
-3. One complete vertical slice is preferred over many unfinished modules.
-4. Generic infrastructure requires a real use case.
-5. Offline synchronization is introduced incrementally.
-6. New infrastructure requires a concrete operational reason.
-7. Product-vision items enter active engineering only after explicit prioritization.
-8. Every phase leaves the repository runnable and tested.
-
----
-
-# 6. Definition of Done
-
-A phase is complete only when:
-
-- intended behavior exists,
-- automated tests cover critical behavior,
-- quality gates pass,
-- security implications are addressed,
-- documentation matches implementation,
-- no known architectural contradiction is introduced.
-
----
-
-# 7. Immediate Next Work
-
-```text
-Architecture Reset
-      ↓
-Crypto/Security Design Review
-      ↓
-Encrypted Document Proof-of-Concept
-      ↓
-Domain Model
-      ↓
-Authentication/Authorization
-      ↓
-First Web Vertical Slice
-      ↓
-Mobile
-      ↓
-Sync MVP
-```
-
-The synchronization engine is deliberately not the next implementation task.
+1. Architecture precedes implementation.
+2. Security architecture precedes sensitive-data implementation.
+3. Domain modeling precedes generic synchronization.
+4. A real use case precedes a generic abstraction.
+5. One complete vertical slice is preferred over many incomplete modules.
+6. Offline synchronization is introduced incrementally.
+7. Security guarantees must never be claimed before they are implemented and tested.
+8. Every completed phase leaves the repository runnable and testable.
