@@ -5,7 +5,6 @@ requires = [
 ]
 build-backend = "setuptools.build_meta"
 
-
 [project]
 name = "glashaus-backend"
 version = "0.1.0"
@@ -16,26 +15,25 @@ requires-python = ">=3.14,<3.15"
 dependencies = [
     "fastapi>=0.116,<1.0",
     "uvicorn[standard]>=0.35,<1.0",
+    "pydantic-settings>=2.10,<3.0",
+    "sqlalchemy>=2.0,<3.0",
+    "psycopg[binary]>=3.2,<4.0",
 ]
-
 
 [project.optional-dependencies]
 dev = [
     "alembic>=1.16,<2.0",
-    "httpx2>=2.0,<3.0",
+    "httpx>=0.28,<1.0",
     "mypy>=1.17,<2.0",
     "pre-commit>=4.2,<5.0",
     "pytest>=8.4,<9.0",
     "pytest-cov>=6.2,<7.0",
     "ruff>=0.12,<1.0",
-    "sqlalchemy>=2.0,<3.0",
 ]
-
 
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["app*"]
-
 
 [tool.ruff]
 target-version = "py314"
@@ -46,7 +44,6 @@ exclude = [
     ".venv",
     "migrations",
 ]
-
 
 [tool.ruff.lint]
 select = [
@@ -62,7 +59,6 @@ ignore = [
     "E501",
 ]
 
-
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = [
     "S101",
@@ -73,7 +69,6 @@ quote-style = "double"
 indent-style = "space"
 line-ending = "lf"
 
-
 [tool.mypy]
 python_version = "3.14"
 strict = true
@@ -83,7 +78,6 @@ disallow_any_generics = true
 disallow_untyped_defs = true
 check_untyped_defs = true
 no_implicit_optional = true
-
 
 [tool.pytest.ini_options]
 testpaths = [
@@ -101,13 +95,11 @@ addopts = [
     "--cov-report=term-missing",
 ]
 
-
 [tool.coverage.run]
 branch = true
 source = [
     "app",
 ]
-
 
 [tool.coverage.report]
 fail_under = 90

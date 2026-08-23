@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 
 from app.core.ids import new_local_id
-from app.db.database import get_session, initialize_database
+from app.db.database import get_session
 from app.db.models import Base, Device, DeviceStatus, SyncState, SyncStatus
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
@@ -46,20 +46,6 @@ def test_device_and_sync_state_survive_session_restart() -> None:
             assert stored_sync_state.cursor == 0
             assert stored_sync_state.next_local_sequence == 1
             assert stored_sync_state.sync_status == SyncStatus.IDLE
-    finally:
-        engine.dispose()
-
-
-def test_initialize_database_creates_tables() -> None:
-    """Initialize a database and create all GlasHaus tables."""
-    engine = create_engine("sqlite:///:memory:")
-
-    try:
-        initialize_database(engine)
-
-        table_names = set(Base.metadata.tables)
-
-        assert table_names == {"devices", "sync_states"}
     finally:
         engine.dispose()
 

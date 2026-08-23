@@ -2,10 +2,13 @@
 
 from fastapi import FastAPI
 
-app = FastAPI(title="GlasHaus Backend")
+from app.api.router import api_router
+from app.core.config import get_settings
 
+settings = get_settings()
 
-@app.get("/")
-def health_check() -> dict[str, str]:
-    """Return the current health status of the backend."""
-    return {"status": "GlasHaus backend running"}
+app = FastAPI(
+    title=settings.app_name,
+)
+
+app.include_router(api_router)

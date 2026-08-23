@@ -226,3 +226,6 @@ dist/
 build/
 .DS_Store
 *.log
+
+# GlasHaus local development database
+*.db
