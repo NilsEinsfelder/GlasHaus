@@ -1,6 +1,6 @@
 """Unit tests for database infrastructure."""
 
-from app.db.database import get_session, initialize_database
+from app.db.database import _engine_kwargs, get_session, initialize_database
 from sqlalchemy import create_engine, inspect
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -33,3 +33,13 @@ def test_get_session_yields_and_closes_session() -> None:
         generator.close()
     finally:
         engine.dispose()
+
+
+def test_engine_kwargs_for_non_sqlite_database() -> None:
+    """Do not add SQLite-specific connection arguments for other databases."""
+    kwargs = _engine_kwargs("postgresql://user:password@localhost/test")
+
+    assert kwargs == {
+        "future": True,
+        "pool_pre_ping": True,
+    }
