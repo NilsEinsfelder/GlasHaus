@@ -249,30 +249,37 @@ Historical employment records may preserve the historical hierarchy and employme
 
 Hierarchy is separate from role.
 
-Initial hierarchy levels may include:
+The initial hierarchy levels are:
 
-- `APPRENTICE`
-- `PROFESSIONAL`
-- `SENIOR`
-- `LEAD`
-- `MANAGEMENT`
+* `APPRENTICE`
+* `JUNIOR`
+* `STANDARD`
+* `SENIOR`
+* `SUPERVISOR`
+* `MANAGEMENT`
 
 The exact catalogue may evolve independently of the authorization engine.
 
 Hierarchy contributes to the user's baseline authorization but does not define the complete permission set.
 
+Hierarchy effects are evaluated in combination with the user's role.
+
 For example:
 
-    TECHNICIAN + APPRENTICE
-        → restricted technician capabilities
+```
+TECHNICIAN + APPRENTICE
+    → restricted technician capabilities
 
-    TECHNICIAN + SENIOR
-        → broader technician capabilities
+TECHNICIAN + SENIOR
+    → broader technician capabilities
 
-    TECHNICIAN + LEAD
-        → additional planning capabilities
+TECHNICIAN + SUPERVISOR
+    → additional planning capabilities
+```
 
 The same hierarchy level may occur across multiple roles without implying identical permissions.
+
+A hierarchy level must therefore never be interpreted as a globally applicable permission set independent of role.
 
 ---
 
@@ -303,6 +310,20 @@ Permissions are controlled application capabilities.
 They are not arbitrary database records that ordinary administrators may create.
 
 The exact permission catalogue is maintained by application policy and must remain explicit and reviewable.
+
+The permission identifiers used by persistence must be the canonical identifiers defined by the authorization model.
+
+Persistence must not introduce an independent permission naming scheme.
+
+Permission identifiers are application policy and must therefore remain consistent across:
+
+* authorization evaluation
+* persistence
+* tests
+* API contracts
+* audit records
+* documentation
+
 
 ---
 
@@ -413,6 +434,12 @@ A User may have only the relationships explicitly assigned to that identity.
 
 A Customer relationship does not change the User's identity.
 
+An ExternalRelationship must not be interpreted as granting access to all resources of the related Customer.
+
+The relationship establishes a business relationship between the User and the Customer.
+
+Project-specific access is represented separately through `CustomerProjectAccess` and remains subject to authorization policy.
+
 The model therefore remains extensible:
 
     User
@@ -510,6 +537,15 @@ The application must additionally verify:
 Customer project access therefore does not replace authorization.
 
 It establishes the project relationship that is required for customer-facing access.
+
+CustomerProjectAccess does not replace the User's ExternalRelationship.
+
+A valid customer-facing project access therefore requires both:
+
+1. an applicable ExternalRelationship between the User and the Project's Customer; and
+2. an active CustomerProjectAccess record for the Project.
+
+Neither relationship alone is sufficient to grant access.
 
 ---
 
