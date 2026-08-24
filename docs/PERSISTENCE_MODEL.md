@@ -8,21 +8,21 @@ It is the source of truth for the domain entities, relationships, historical sta
 
 The model is designed to support:
 
-- self-hosted installations
-- local identity and authentication
-- employment and hierarchy
-- explicit application roles
-- modular permissions
-- individual permission grants and restrictions
-- customers and external business relationships
-- projects and explicit project access
-- internal and customer workspaces
-- documents and immutable document versions
-- devices and sessions
-- audit records
-- encryption metadata
-- future federation
-- future synchronization
+* self-hosted installations
+* local identity and authentication
+* employment and hierarchy
+* explicit application roles
+* modular permissions
+* individual permission grants and restrictions
+* customers and external business relationships
+* projects and explicit project access
+* internal and customer workspaces
+* documents and immutable document versions
+* devices and sessions
+* audit records
+* encryption metadata
+* future federation
+* future synchronization
 
 This document defines the target architecture.
 
@@ -74,14 +74,16 @@ There is no local multi-tenant `organization_id` requirement in the normal deplo
 
 Conceptually:
 
-    GlasHaus Server
-        │
-        ├── Users
-        ├── Customers
-        ├── Projects
-        ├── Documents
-        ├── Scheduling
-        └── Other Business Data
+```text
+GlasHaus Server
+    │
+    ├── Users
+    ├── Customers
+    ├── Projects
+    ├── Documents
+    ├── Scheduling
+    └── Other Business Data
+```
 
 All local domain records belong to this server.
 
@@ -99,11 +101,11 @@ The existing UUIDv7 direction is retained.
 
 Identifiers must:
 
-- be globally unique
-- be stable over the lifetime of the entity
-- preserve relationships
-- survive synchronization
-- not depend on database-generated sequential identifiers
+* be globally unique
+* be stable over the lifetime of the entity
+* preserve relationships
+* survive synchronization
+* not depend on database-generated sequential identifiers
 
 Identifiers must not encode authorization state.
 
@@ -117,24 +119,26 @@ A known identifier never grants access to the corresponding resource.
 
 Conceptual fields:
 
-    User
-    ├── id
-    ├── login_identifier
-    ├── display_name
-    ├── email
-    ├── date_of_birth
-    ├── user_type
-    ├── role
-    ├── active
-    ├── created_at
-    └── updated_at
+```text
+User
+├── id
+├── login_identifier
+├── display_name
+├── email
+├── date_of_birth
+├── user_type
+├── role
+├── active
+├── created_at
+└── updated_at
+```
 
 A User represents one human account that can authenticate to GlasHaus.
 
 Every User has exactly one:
 
-- `user_type`
-- `role`
+* `user_type`
+* `role`
 
 The role represents the user's current functional responsibility.
 
@@ -154,8 +158,8 @@ Every User has exactly one user type.
 
 Initial values are:
 
-- `INTERNAL`
-- `EXTERNAL`
+* `INTERNAL`
+* `EXTERNAL`
 
 `INTERNAL` identifies a person belonging to the organization operating the server.
 
@@ -177,33 +181,35 @@ Roles describe functional responsibility.
 
 Initial examples include:
 
-- `TECHNICIAN`
-- `OFFICE`
-- `SITE_SUPERVISOR`
-- `MANAGEMENT`
-- `CUSTOMER`
+* `TECHNICIAN`
+* `OFFICE`
+* `SITE_SUPERVISOR`
+* `MANAGEMENT`
+* `CUSTOMER`
 
 Future external roles may include:
 
-- `TAX_ADVISOR`
-- `SUPPLIER`
-- `PARTNER`
+* `TAX_ADVISOR`
+* `SUPPLIER`
+* `PARTNER`
 
 Role assignment must be compatible with the user's `user_type`.
 
 For example:
 
-    INTERNAL
-        ├── TECHNICIAN
-        ├── OFFICE
-        ├── SITE_SUPERVISOR
-        └── MANAGEMENT
+```text
+INTERNAL
+    ├── TECHNICIAN
+    ├── OFFICE
+    ├── SITE_SUPERVISOR
+    └── MANAGEMENT
 
-    EXTERNAL
-        ├── CUSTOMER
-        ├── TAX_ADVISOR
-        ├── SUPPLIER
-        └── PARTNER
+EXTERNAL
+    ├── CUSTOMER
+    ├── TAX_ADVISOR
+    ├── SUPPLIER
+    └── PARTNER
+```
 
 An external role must never implicitly provide internal workspace access.
 
@@ -217,15 +223,17 @@ Role definitions and their default permissions are application policy, not arbit
 
 Conceptual fields:
 
-    Employment
-    ├── id
-    ├── user_id
-    ├── hierarchy_level
-    ├── employment_status
-    ├── valid_from
-    ├── valid_until
-    ├── created_at
-    └── updated_at
+```text
+Employment
+├── id
+├── user_id
+├── hierarchy_level
+├── employment_status
+├── valid_from
+├── valid_until
+├── created_at
+└── updated_at
+```
 
 Employment records are only applicable to internal users.
 
@@ -266,7 +274,7 @@ Hierarchy effects are evaluated in combination with the user's role.
 
 For example:
 
-```
+```text
 TECHNICIAN + APPRENTICE
     → restricted technician capabilities
 
@@ -287,35 +295,87 @@ A hierarchy level must therefore never be interpreted as a globally applicable p
 
 A Permission is an application-defined capability.
 
-Examples include:
+The MVP uses the following canonical Permission identifiers:
 
-    PROJECT_READ
-    PROJECT_WRITE
-    DOCUMENT_READ
-    DOCUMENT_CREATE
-    DOCUMENT_UPDATE
-    DOCUMENT_DELETE
-    DOCUMENT_PUBLISH_CUSTOMER
-    PURCHASE_CREATE
-    CALENDAR_AVAILABILITY_READ
-    CALENDAR_DETAILS_READ
-    CUSTOMER_PROJECT_READ
-    CUSTOMER_DOCUMENT_READ
-    CUSTOMER_FILE_DOWNLOAD
-    PERMISSION_MANAGE
-    USER_MANAGE
+### Customer
 
-Permissions are controlled application capabilities.
+```text
+customer.read
+customer.write
+```
 
-They are not arbitrary database records that ordinary administrators may create.
+### Project
 
-The exact permission catalogue is maintained by application policy and must remain explicit and reviewable.
+```text
+project.read
+project.write
+project.coordinate
+```
 
-The permission identifiers used by persistence must be the canonical identifiers defined by the authorization model.
+### Purchasing
 
-Persistence must not introduce an independent permission naming scheme.
+```text
+purchase.create
+purchase.grant
+```
 
-Permission identifiers are application policy and must therefore remain consistent across:
+### Documents
+
+```text
+document.read
+document.write
+document.sign
+```
+
+### Scheduling
+
+```text
+schedule.view_availability
+schedule.view_details
+schedule.assignment_write
+schedule.assignment_request
+schedule.assignment_grant
+```
+
+### User and Permission Management
+
+```text
+user.manage
+permission.manage
+```
+
+The complete canonical MVP Permission set is therefore:
+
+```text
+customer.read
+customer.write
+
+project.read
+project.write
+project.coordinate
+
+purchase.create
+purchase.grant
+
+document.read
+document.write
+document.sign
+
+schedule.view_availability
+schedule.view_details
+schedule.assignment_write
+schedule.assignment_request
+schedule.assignment_grant
+
+user.manage
+permission.manage
+```
+
+These identifiers are shared with the authorization model defined in `docs/IDENTITY_AUTHORIZATION.md`.
+
+Persistence must not introduce an independent Permission naming scheme.
+
+Permission identifiers are application policy and must remain consistent across:
 
 * authorization evaluation
 * persistence
@@ -324,6 +384,22 @@ Permission identifiers are application policy and must therefore remain consiste
 * audit records
 * documentation
 
+The Permission catalogue is application policy and must remain explicit, reviewable, and testable.
+
+Ordinary administrators must not create arbitrary new Permission types at runtime.
+
+Permission and scope are separate concepts.
+
+For example:
+
+```text
+permission = purchase.create
+scope = PROJECT:123
+```
+
+The Permission identifier must not encode the resource scope.
+
+The persistence layer stores Permission references and authorization data, but the authorization engine remains responsible for evaluating whether a Permission is effective for a particular operation.
 
 ---
 
@@ -333,50 +409,123 @@ Individual permission changes are persisted explicitly.
 
 Conceptual fields:
 
-    PermissionGrant
-    ├── id
-    ├── user_id
-    ├── permission
-    ├── effect
-    ├── scope_type
-    ├── scope_id
-    ├── granted_by_user_id
-    ├── reason
-    ├── valid_from
-    ├── valid_until
-    ├── active
-    ├── created_at
-    └── updated_at
+```text
+PermissionGrant
+├── id
+├── user_id
+├── permission
+├── effect
+├── scope_type
+├── scope_id
+├── granted_by_user_id
+├── reason
+├── valid_from
+├── valid_until
+├── active
+├── created_at
+└── updated_at
+```
 
 `effect` may be:
 
-- `ALLOW`
-- `DENY`
+* `ALLOW`
+* `DENY`
 
 A grant or restriction must be:
 
-- explicit
-- scoped
-- attributable
-- revocable
-- optionally time-limited
-- auditable where required
-- subject to mandatory authorization policy
+* explicit
+* scoped
+* attributable
+* revocable
+* optionally time-limited
+* auditable where required
+* subject to mandatory authorization policy
 
 Possible scope types include:
 
-- `GLOBAL`
-- `PROJECT`
-- `WORKSPACE`
-- `DOCUMENT`
-- `USER`
-- other explicitly approved resource scopes
+* `GLOBAL`
+* `PROJECT`
+* `WORKSPACE`
+* `DOCUMENT`
+* `USER`
+* other explicitly approved resource scopes
 
 Additional scope types require an architectural decision.
 
 The database must not allow persistence of a permission grant to bypass application-level permission-management policy.
 
 A persisted grant is therefore not automatically an effective authorization decision.
+
+### Grant Constraints
+
+Some Permissions may carry additional constraints.
+
+A constraint is not itself a Permission.
+
+For example, purchasing may use a financial purchase limit:
+
+```text
+permission = purchase.create
+scope = PROJECT:123
+purchase_limit = 2000 EUR
+```
+
+The `purchase_limit` is therefore a constraint on `purchase.create`, not a separate Permission.
+
+The persistence model must be capable of representing:
+
+```text
+purchase_limit = integer value
+```
+
+or:
+
+```text
+purchase_limit = None
+```
+
+where `None` means that no additional purchase limit is imposed by that grant.
+
+The exact representation of monetary values must use a lossless monetary representation and must not use floating-point storage.
+
+Grant constraints must be evaluated by the authorization layer whenever the protected operation is executed.
+
+A principal with `permission.manage` must not be able to persist a grant that exceeds the principal's own delegable authority.
+
+### Delegation Constraints
+
+A principal with `permission.manage` does not automatically have unlimited authority to grant arbitrary Permissions.
+
+A principal may only delegate authority that the principal is itself authorized to delegate.
+
+Delegation must therefore be constrained by:
+
+* the granting principal's own effective authority
+* the Permission being delegated
+* the target scope
+* applicable constraints
+* applicable policy restrictions
+* any temporal validity of the grant
+
+For example, a principal with:
+
+```text
+permission = purchase.create
+scope = PROJECT:123
+purchase_limit = 2000 EUR
+```
+
+must not be able to delegate:
+
+```text
+permission = purchase.create
+scope = PROJECT:123
+purchase_limit = None
+```
+
+unless the principal independently possesses sufficient authority to delegate that broader purchasing capability.
+
+Permission administration must never provide an implicit privilege-escalation path.
 
 ---
 
@@ -386,19 +535,21 @@ A persisted grant is therefore not automatically an effective authorization deci
 
 Conceptual fields:
 
-    Customer
-    ├── id
-    ├── customer_type
-    ├── name
-    ├── contact_metadata
-    ├── active
-    ├── created_at
-    └── updated_at
+```text
+Customer
+├── id
+├── customer_type
+├── name
+├── contact_metadata
+├── active
+├── created_at
+└── updated_at
+```
 
 Initial customer types include:
 
-- `COMPANY`
-- `PRIVATE`
+* `COMPANY`
+* `PRIVATE`
 
 A Customer is not a tenant and is not a User.
 
@@ -408,27 +559,43 @@ A Customer may own or be associated with multiple Projects.
 
 ## 13. External Relationship
 
-External relationships connect external Users with business entities.
+An `ExternalRelationship` represents a business relationship between a User and a Customer.
+
+The relationship is separate from the User's identity.
+
+An External User must therefore not contain a direct `customer_id` as its primary mechanism for Customer affiliation.
 
 Conceptually:
 
-    ExternalRelationship
-    ├── id
-    ├── user_id
-    ├── relationship_type
-    ├── customer_id (when applicable)
-    ├── active
-    ├── valid_from
-    ├── valid_until
-    ├── created_at
-    └── updated_at
+```text
+User
+  │
+  └── ExternalRelationship
+          │
+          └── Customer
+```
 
-Relationship types may include:
+The model should support:
 
-- `CUSTOMER`
-- `SUPPLIER`
-- `TAX_ADVISOR`
-- `PARTNER`
+```text
+ExternalRelationship
+├── id
+├── user_id
+├── relationship_type
+├── customer_id
+├── valid_from
+├── valid_until
+├── active
+├── created_at
+└── updated_at
+```
+
+The initial relationship types are:
+
+* `CUSTOMER`
+* `SUPPLIER`
+* `TAX_ADVISOR`
+* `PARTNER`
 
 A User may have only the relationships explicitly assigned to that identity.
 
@@ -442,14 +609,16 @@ Project-specific access is represented separately through `CustomerProjectAccess
 
 The model therefore remains extensible:
 
-    User
-      │
-      └── EXTERNAL
-            │
-            ├── Customer Relationship
-            ├── Supplier Relationship
-            ├── Tax Advisor Relationship
-            └── Partner Relationship
+```text
+User
+  │
+  └── EXTERNAL
+        │
+        ├── Customer Relationship
+        ├── Supplier Relationship
+        ├── Tax Advisor Relationship
+        └── Partner Relationship
+```
 
 Future relationship types must not require redefining the core User model.
 
@@ -461,14 +630,16 @@ A Project is a first-class local business resource.
 
 Conceptual fields:
 
-    Project
-    ├── id
-    ├── customer_id
-    ├── name
-    ├── status
-    ├── address_metadata
-    ├── created_at
-    └── updated_at
+```text
+Project
+├── id
+├── customer_id
+├── name
+├── status
+├── address_metadata
+├── created_at
+└── updated_at
+```
 
 Each Project has exactly one primary Customer.
 
@@ -476,12 +647,12 @@ Project address and other project metadata are protected business information.
 
 Project access is never granted merely because a User knows:
 
-- the project ID
-- the project name
-- the customer name
-- the physical address
-- a document ID
-- a URL
+* the project ID
+* the project name
+* the customer name
+* the physical address
+* a document ID
+* a URL
 
 ---
 
@@ -489,16 +660,20 @@ Project access is never granted merely because a User knows:
 
 Internal project access is represented explicitly.
 
-    ProjectAssignment
-    ├── id
-    ├── project_id
-    ├── user_id
-    ├── assignment_context
-    ├── valid_from
-    ├── valid_until
-    ├── active
-    ├── created_at
-    └── updated_at
+Conceptual fields:
+
+```text
+ProjectAssignment
+├── id
+├── project_id
+├── user_id
+├── assignment_context
+├── valid_from
+├── valid_until
+├── active
+├── created_at
+└── updated_at
+```
 
 An internal User without an active ProjectAssignment does not receive project-specific access merely because the User is internal.
 
@@ -514,15 +689,19 @@ There is no emergency or convenience access path for unassigned projects.
 
 Customer project access is represented explicitly.
 
-    CustomerProjectAccess
-    ├── id
-    ├── project_id
-    ├── user_id
-    ├── valid_from
-    ├── valid_until
-    ├── active
-    ├── created_at
-    └── updated_at
+Conceptual fields:
+
+```text
+CustomerProjectAccess
+├── id
+├── project_id
+├── user_id
+├── valid_from
+├── valid_until
+├── active
+├── created_at
+└── updated_at
+```
 
 The application must additionally verify:
 
@@ -540,7 +719,7 @@ It establishes the project relationship that is required for customer-facing acc
 
 CustomerProjectAccess does not replace the User's ExternalRelationship.
 
-A valid customer-facing project access therefore requires both:
+A valid customer-facing project authorization therefore requires both:
 
 1. an applicable ExternalRelationship between the User and the Project's Customer; and
 2. an active CustomerProjectAccess record for the Project.
@@ -553,17 +732,21 @@ Neither relationship alone is sufficient to grant access.
 
 Each Project has two primary workspaces.
 
-    Workspace
-    ├── id
-    ├── project_id
-    ├── workspace_type
-    ├── created_at
-    └── updated_at
+Conceptual fields:
+
+```text
+Workspace
+├── id
+├── project_id
+├── workspace_type
+├── created_at
+└── updated_at
+```
 
 Workspace types are:
 
-- `INTERNAL`
-- `CUSTOMER`
+* `INTERNAL`
+* `CUSTOMER`
 
 Exactly one Internal Workspace and one Customer Workspace exist for each Project.
 
@@ -581,18 +764,20 @@ A Customer Workspace must never expose Internal Workspace data merely because bo
 
 Conceptual fields:
 
-    Document
-    ├── id
-    ├── project_id
-    ├── workspace_id
-    ├── created_by_user_id
-    ├── filename
-    ├── media_type
-    ├── status
-    ├── sensitivity_class
-    ├── storage_object_id
-    ├── created_at
-    └── updated_at
+```text
+Document
+├── id
+├── project_id
+├── workspace_id
+├── created_by_user_id
+├── filename
+├── media_type
+├── status
+├── sensitivity_class
+├── storage_object_id
+├── created_at
+└── updated_at
+```
 
 A Document belongs to exactly one Project and one Workspace.
 
@@ -602,32 +787,56 @@ Document metadata is subject to the same authorization boundary as document cont
 
 Document contents are not stored directly in the relational database.
 
+### Document Scope
+
+The MVP defines document Permissions independently from Project scope.
+
+For example:
+
+```text
+permission = document.read
+scope = PROJECT:123
+```
+
+or:
+
+```text
+permission = document.sign
+scope = DOCUMENT:456
+```
+
+The Permission identifier must not encode the Project or Workspace relationship.
+
 ---
 
 ## 19. Document Versions
 
 Documents may contain immutable versions.
 
-    DocumentVersion
-    ├── id
-    ├── document_id
-    ├── version_number
-    ├── content_digest
-    ├── storage_object_id
-    ├── size
-    ├── encryption_version
-    ├── encryption_key_id
-    ├── created_by_user_id
-    └── created_at
+Conceptual fields:
+
+```text
+DocumentVersion
+├── id
+├── document_id
+├── version_number
+├── content_digest
+├── storage_object_id
+├── size
+├── encryption_version
+├── encryption_key_id
+├── created_by_user_id
+└── created_at
+```
 
 Document versions support:
 
-- auditability
-- integrity verification
-- immutable historical content
-- encryption rotation
-- synchronization
-- controlled restoration
+* auditability
+* integrity verification
+* immutable historical content
+* encryption rotation
+* synchronization
+* controlled restoration
 
 Version records should not be mutated merely to represent a new document state.
 
@@ -641,11 +850,11 @@ Encryption metadata may be persisted with DocumentVersion or an associated encry
 
 Possible metadata includes:
 
-- encryption scheme/version
-- key identifier
-- nonce/IV
-- wrapped data-key metadata
-- integrity metadata
+* encryption scheme/version
+* key identifier
+* nonce/IV
+* wrapped data-key metadata
+* integrity metadata
 
 Secret production key material must not be stored in the same relational database table as encrypted document content metadata.
 
@@ -661,16 +870,18 @@ Persistence must not imply that possessing an encryption key identifier grants a
 
 Conceptually:
 
-    User
-      │
-      ├── Device
-      └── Session
+```text
+User
+  │
+  ├── Device
+  └── Session
+```
 
 A Device may have lifecycle states such as:
 
-- `PENDING`
-- `ACTIVE`
-- `REVOKED`
+* `PENDING`
+* `ACTIVE`
+* `REVOKED`
 
 A Device may be revoked independently of its User.
 
@@ -686,14 +897,16 @@ A Session represents an authenticated interaction.
 
 Conceptual fields:
 
-    Session
-    ├── id
-    ├── user_id
-    ├── device_id (where applicable)
-    ├── created_at
-    ├── expires_at
-    ├── revoked_at
-    └── authentication_metadata
+```text
+Session
+├── id
+├── user_id
+├── device_id (where applicable)
+├── created_at
+├── expires_at
+├── revoked_at
+└── authentication_metadata
+```
 
 Session credentials must not be stored in plaintext where a secure hashed/token-reference design is applicable.
 
@@ -709,16 +922,18 @@ Security-sensitive and business-critical actions require audit records where def
 
 Conceptual fields:
 
-    AuditEvent
-    ├── id
-    ├── actor_user_id
-    ├── action
-    ├── resource_type
-    ├── resource_id
-    ├── result
-    ├── timestamp
-    ├── request_correlation_id
-    └── metadata
+```text
+AuditEvent
+├── id
+├── actor_user_id
+├── action
+├── resource_type
+├── resource_id
+├── result
+├── timestamp
+├── request_correlation_id
+└── metadata
+```
 
 Audit records should identify the relevant actor, target resource, action, result, and correlation context where available.
 
@@ -732,14 +947,18 @@ Audit data is itself protected information and requires appropriate retention an
 
 Future server-to-server trust is represented separately from local identity.
 
-    FederationPeer
-    ├── id
-    ├── remote_server_id
-    ├── display_name
-    ├── trust_state
-    ├── public_key
-    ├── created_at
-    └── revoked_at
+Conceptual fields:
+
+```text
+FederationPeer
+├── id
+├── remote_server_id
+├── display_name
+├── trust_state
+├── public_key
+├── created_at
+└── revoked_at
+```
 
 Federation peers are not Users.
 
@@ -757,18 +976,22 @@ Synchronization metadata remains separate from domain semantics.
 
 A device synchronization state may be represented as:
 
-    SyncState
-    ├── device_id
-    ├── cursor
-    ├── state
-    ├── created_at
-    └── updated_at
+```text
+SyncState
+├── device_id
+├── cursor
+├── state
+├── created_at
+└── updated_at
+```
 
 Future synchronization infrastructure may include:
 
-    OutboxOperation
-    ChangeFeedEntry
-    Tombstone
+```text
+OutboxOperation
+ChangeFeedEntry
+Tombstone
+```
 
 These entities are introduced only when a concrete offline workflow requires them.
 
@@ -778,58 +1001,128 @@ Every synchronized resource remains subject to the same authorization semantics 
 
 ---
 
-## 26. Principal Relationships
+## 26. Purchasing Scope
+
+Purchasing is modeled as a separate capability domain.
+
+The canonical purchasing Permissions are:
+
+```text
+purchase.create
+purchase.grant
+```
+
+Purchasing Permissions are scoped independently from the Permission identifier.
+
+A project purchase may therefore be authorized as:
+
+```text
+permission = purchase.create
+scope = PROJECT:123
+```
+
+The architecture must also support purchases that are not associated with a Customer Project.
+
+Such purchases represent organizational or overhead spending and must not require an artificial Project such as `Office` or `Warehouse`.
+
+A future Purchase domain model may therefore allow:
+
+```text
+Purchase
+├── id
+├── project_id
+├── organizational_scope
+├── created_by_user_id
+├── amount
+└── ...
+```
+
+For a project purchase:
+
+```text
+project_id = Project.id
+```
+
+For a non-project purchase:
+
+```text
+project_id = NULL
+```
+
+A `NULL` project reference represents a purchase that is not attributable to a Customer Project.
+
+The exact organizational scope for non-project purchases will be defined when the Purchase domain is implemented.
+
+Project-scoped purchasing must remain possible independently of organization-wide purchasing.
+
+A User may therefore be authorized to create purchases for a specific Project without automatically receiving authority to create general organizational purchases.
+
+A future Purchase implementation must also preserve the distinction between:
+
+* the Permission `purchase.create`
+* the purchase scope
+* the purchase amount
+* any applicable `purchase_limit`
+* the authority of the principal creating or granting the purchase permission
+
+An artificial Project such as `Office` or `Warehouse` must not be introduced solely to represent organizational overhead purchases.
+
+---
+
+## 27. Principal Relationships
 
 The principal persistence relationships are:
 
-    User
-      ├── Employment
-      ├── ExternalRelationship
-      ├── Device
-      ├── Session
-      ├── PermissionGrant
-      ├── ProjectAssignment
-      └── CustomerProjectAccess
+```text
+User
+  ├── Employment
+  ├── ExternalRelationship
+  ├── Device
+  ├── Session
+  ├── PermissionGrant
+  ├── ProjectAssignment
+  └── CustomerProjectAccess
 
-    Customer
-      └── Project
+Customer
+  └── Project
 
-    Project
-      ├── ProjectAssignment
-      ├── CustomerProjectAccess
-      ├── Workspace
-      └── Document
+Project
+  ├── ProjectAssignment
+  ├── CustomerProjectAccess
+  ├── Workspace
+  └── Document
 
-    Workspace
-      └── Document
+Workspace
+  └── Document
 
-    Document
-      └── DocumentVersion
+Document
+  └── DocumentVersion
+```
 
 The exact cardinality and database constraints must be enforced through schema design where practical.
 
 ---
 
-## 27. Referential Integrity
+## 28. Referential Integrity
 
 Important domain relationships must use database foreign keys.
 
 Examples include:
 
-- Employment → User
-- ExternalRelationship → User
-- ExternalRelationship → Customer where applicable
-- Project → Customer
-- ProjectAssignment → Project/User
-- CustomerProjectAccess → Project/User
-- Workspace → Project
-- Document → Project/Workspace
-- DocumentVersion → Document
-- Device → User
-- Session → User/Device where applicable
-- PermissionGrant → User
-- PermissionGrant → granting User where applicable
-- AuditEvent → actor User where applicable
+* Employment → User
+* ExternalRelationship → User
+* ExternalRelationship → Customer where applicable
+* Project → Customer
+* ProjectAssignment → Project/User
+* CustomerProjectAccess → Project/User
+* Workspace → Project
+* Document → Project/Workspace
+* DocumentVersion → Document
+* Device → User
+* Session → User/Device where applicable
+* PermissionGrant → User
+* PermissionGrant → granting User where applicable
+* AuditEvent → actor User where applicable
 
 Application validation complements database constraints but does not replace them.
 
@@ -837,22 +1130,22 @@ Important cross-entity invariants that cannot be expressed directly through fore
 
 ---
 
-## 28. Temporal and Historical State
+## 29. Temporal and Historical State
 
 Entities whose state affects security or business history should support temporal validity where required.
 
 Examples include:
 
-- Employment
-- ExternalRelationship
-- ProjectAssignment
-- CustomerProjectAccess
-- PermissionGrant
+* Employment
+* ExternalRelationship
+* ProjectAssignment
+* CustomerProjectAccess
+* PermissionGrant
 
 Temporal records should use explicit validity fields such as:
 
-- `valid_from`
-- `valid_until`
+* `valid_from`
+* `valid_until`
 
 Current state must be derived according to deterministic rules.
 
@@ -862,34 +1155,34 @@ Historical records must remain available when required for auditability and hist
 
 ---
 
-## 29. Deactivation and Deletion
+## 30. Deactivation and Deletion
 
 Security-relevant identities and resources should normally be deactivated rather than physically deleted when historical references are required.
 
 Examples include:
 
-- User
-- Customer
-- Project
-- Device
-- PermissionGrant
-- ExternalRelationship
-- ProjectAssignment
-- CustomerProjectAccess
+* User
+* Customer
+* Project
+* Device
+* PermissionGrant
+* ExternalRelationship
+* ProjectAssignment
+* CustomerProjectAccess
 
 Physical deletion is permitted only when:
 
-- retention policy allows it
-- audit requirements are satisfied
-- referential integrity remains valid
-- synchronization implications are understood
-- legal and business requirements are satisfied
+* retention policy allows it
+* audit requirements are satisfied
+* referential integrity remains valid
+* synchronization implications are understood
+* legal and business requirements are satisfied
 
 Deactivation must not silently remove historical evidence required for security or audit.
 
 ---
 
-## 30. Persistence and Authorization
+## 31. Persistence and Authorization
 
 Persistence is not authorization.
 
@@ -899,17 +1192,19 @@ The application must evaluate authorization before disclosing protected resource
 
 Conceptually:
 
-    authenticate
-        ↓
-    establish principal
-        ↓
-    authorize requested action and scope
-        ↓
-    load permitted resource
-        ↓
-    decrypt where required
-        ↓
-    return permitted representation
+```text
+authenticate
+    ↓
+establish principal
+    ↓
+authorize requested action and scope
+    ↓
+load permitted resource
+    ↓
+decrypt where required
+    ↓
+return permitted representation
+```
 
 For sensitive resources, unauthorized records should be excluded as early as practical.
 
@@ -919,25 +1214,31 @@ The authoritative authorization decision remains a domain/application responsibi
 
 ---
 
-## 31. Persistence and Partial Visibility
+## 32. Persistence and Partial Visibility
 
 Persistence must support authorization decisions that expose only a permitted representation of a resource.
 
 For example:
 
-    CALENDAR_AVAILABILITY_READ
+```text
+schedule.view_availability
+```
 
 may permit:
 
-    Technician B
-    Tuesday: available
+```text
+Technician B
+Tuesday: available
+```
 
 without permitting:
 
-    Customer
-    Project Address
-    Appointment Details
-    Internal Notes
+```text
+Customer
+Project Address
+Appointment Details
+Internal Notes
+```
 
 Sensitive fields must not be loaded into or returned through an API merely because the caller can access the parent entity.
 
@@ -945,7 +1246,7 @@ Queries and serialization should therefore support data minimization.
 
 ---
 
-## 32. Persistence and Search
+## 33. Persistence and Search
 
 Search must be authorization-aware.
 
@@ -953,7 +1254,9 @@ Unauthorized resources must not be discoverable merely through search.
 
 A search query must not return information such as:
 
-    Project A — access denied
+```text
+Project A — access denied
+```
 
 to a user who is not authorized to discover Project A.
 
@@ -961,10 +1264,10 @@ Unauthorized resources should normally be omitted entirely.
 
 Sensitive encrypted fields may not support ordinary:
 
-- equality search
-- sorting
-- range queries
-- full-text search
+* equality search
+* sorting
+* range queries
+* full-text search
 
 without additional design.
 
@@ -974,7 +1277,7 @@ Search indexes must not become accidental plaintext copies of encrypted data.
 
 ---
 
-## 33. Persistence and Binary Storage
+## 34. Persistence and Binary Storage
 
 Binary content is stored outside the relational database.
 
@@ -986,35 +1289,37 @@ Binary retrieval must pass through the same authorization boundary as relational
 
 Conceptually:
 
-    Request
-      ↓
-    Authentication
-      ↓
-    Authorization
-      ↓
-    Document metadata
-      ↓
-    Storage object retrieval
-      ↓
-    Decryption where required
-      ↓
-    Authorized content
+```text
+Request
+  ↓
+Authentication
+  ↓
+Authorization
+  ↓
+Document metadata
+  ↓
+Storage object retrieval
+  ↓
+Decryption where required
+  ↓
+Authorized content
+```
 
 The object storage layer must never become an authorization bypass.
 
 ---
 
-## 34. Persistence and Encryption
+## 35. Persistence and Encryption
 
 Encryption and authorization are separate controls.
 
 Persistence may store:
 
-- ciphertext metadata
-- key identifiers
-- encryption versions
-- integrity metadata
-- storage references
+* ciphertext metadata
+* key identifiers
+* encryption versions
+* integrity metadata
+* storage references
 
 Persistence must not store secret production key material alongside ciphertext.
 
@@ -1026,19 +1331,19 @@ The cryptographic architecture is defined in `docs/CRYPTOGRAPHY.md`.
 
 ---
 
-## 35. Migration Rules
+## 36. Migration Rules
 
 All production schema changes use Alembic.
 
 Every migration must:
 
-- be deterministic
-- preserve required data
-- maintain referential integrity
-- be reviewed
-- have tests where behavior is non-trivial
-- document irreversible operations
-- avoid accidental destructive changes
+* be deterministic
+* preserve required data
+* maintain referential integrity
+* be reviewed
+* have tests where behavior is non-trivial
+* document irreversible operations
+* avoid accidental destructive changes
 
 The application must not rely on implicit schema creation during normal production startup.
 
@@ -1046,7 +1351,7 @@ Database schema state must be reproducible from the migration history.
 
 ---
 
-## 36. Implementation Order
+## 37. Implementation Order
 
 The target persistence model should be implemented in a dependency-aware sequence:
 
@@ -1069,9 +1374,13 @@ The target persistence model should be implemented in a dependency-aware sequenc
 
 The implementation order does not change the architectural relationships defined by this document.
 
+Purchasing is currently defined as an authorization and domain-design concern.
+
+The concrete `Purchase` persistence model is intentionally deferred until the purchasing workflow is implemented.
+
 ---
 
-## 37. Persistence Invariants
+## 38. Persistence Invariants
 
 The following persistence invariants must remain true unless this architecture is explicitly changed:
 
@@ -1113,39 +1422,47 @@ The following persistence invariants must remain true unless this architecture i
 
 19. Persisted permission grants do not bypass authorization policy.
 
-20. Devices can be revoked independently of Users.
+20. Permission identifiers are canonical and shared with the authorization model.
 
-21. Sessions establish authentication context but do not grant authorization.
+21. Permission scope is represented separately from the Permission identifier.
 
-22. Audit data is protected information.
+22. Purchasing limits are constraints on purchasing authority, not separate Permissions.
 
-23. Federation peers are not local Users.
+23. Project-scoped purchasing does not imply organization-wide purchasing authority.
 
-24. Synchronization metadata does not create a second authorization model.
+24. Devices can be revoked independently of Users.
 
-25. Binary content is stored outside the relational database.
+25. Sessions establish authentication context but do not grant authorization.
 
-26. Secret production key material is not stored alongside ciphertext.
+26. Audit data is protected information.
 
-27. Authorization is not delegated to persistence relationships.
+27. Federation peers are not local Users.
 
-28. Known resource identifiers never imply access.
+28. Synchronization metadata does not create a second authorization model.
 
-29. Production schema changes are managed through Alembic.
+29. Binary content is stored outside the relational database.
+
+30. Secret production key material is not stored alongside ciphertext.
+
+31. Authorization is not delegated to persistence relationships.
+
+32. Known resource identifiers never imply access.
+
+33. Production schema changes are managed through Alembic.
 
 ---
 
-## 38. Related Documents
+## 39. Related Documents
 
 This document must be read together with:
 
-- `docs/ARCHITECTURE.md`
-- `docs/IDENTITY_AUTHORIZATION.md`
-- `docs/SECURITY.md`
-- `docs/CRYPTOGRAPHY.md`
-- `docs/SYNC.md`
-- `docs/TESTING.md`
-- `docs/Roadmap.md`
+* `docs/ARCHITECTURE.md`
+* `docs/IDENTITY_AUTHORIZATION.md`
+* `docs/SECURITY.md`
+* `docs/CRYPTOGRAPHY.md`
+* `docs/SYNC.md`
+* `docs/TESTING.md`
+* `docs/Roadmap.md`
 
 `docs/IDENTITY_AUTHORIZATION.md` defines authorization semantics.
 

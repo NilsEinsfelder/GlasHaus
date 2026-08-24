@@ -107,13 +107,14 @@ Maintain one consistent target model before expanding production implementation.
 
 The following architecture documents form the baseline:
 
-- `docs/ARCHITECTURE.md`
-- `docs/PERSISTENCE_MODEL.md`
-- `docs/SECURITY.md`
-- `docs/CRYPTOGRAPHY.md`
-- `docs/SYNC.md`
-- `docs/TESTING.md`
-- `docs/Roadmap.md`
+* `docs/ARCHITECTURE.md`
+* `docs/IDENTITY_AUTHORIZATION.md`
+* `docs/PERSISTENCE_MODEL.md`
+* `docs/SECURITY.md`
+* `docs/CRYPTOGRAPHY.md`
+* `docs/SYNC.md`
+* `docs/TESTING.md`
+* `docs/Roadmap.md`
 
 The documents must remain mutually consistent.
 

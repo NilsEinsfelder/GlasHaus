@@ -160,17 +160,46 @@ An external user does not belong to the organization operating the GlasHaus serv
 
 It must not be replaced by relationship-specific user types such as `CUSTOMER_USER`.
 
-Future external relationships may include:
+#### External Relationships and Customer Project Access
 
-- customer
-- supplier
-- tax advisor
-- partner company
-- other explicitly authorized business relationships
+An external User's business relationship is separate from the User's identity.
 
-User type describes the identity's organizational position.
+The model is:
 
-It does not describe the business relationship represented by that identity.
+```text
+User
+  |
+  +-- ExternalRelationship --> Customer
+  |
+  +-- CustomerProjectAccess --> Project
+```
+
+An `ExternalRelationship` describes the business relationship between an external User and a Customer.
+
+Examples include:
+
+```text
+CUSTOMER
+SUPPLIER
+TAX_ADVISOR
+PARTNER
+```
+
+The relationship does not by itself grant access to every resource of the related Customer.
+
+Project-specific customer access is represented separately through `CustomerProjectAccess`.
+
+A valid customer-facing project authorization therefore requires all applicable conditions to be satisfied:
+
+1. the User is active;
+2. the User has an applicable external relationship with the Project's Customer;
+3. the User has valid access to the Project;
+4. the requested Permission is effective;
+5. the Permission applies to the requested scope;
+6. all applicable policy and security constraints are satisfied.
+
+Neither an `ExternalRelationship` nor a `CustomerProjectAccess` record alone is sufficient to bypass the authorization model.
+
 
 ---
 
@@ -333,56 +362,276 @@ An identical hierarchy level must not accidentally grant unrelated permissions a
 
 ## 11. Permission Model
 
-Permissions represent explicit capabilities.
+A Permission represents an application-defined capability.
 
-Examples include:
+Permissions and resource scopes are separate concepts.
 
-- `project.view`
-- `project.update`
-- `document.view`
-- `document.download`
-- `document.upload`
-- `document.sign`
-- `schedule.view_availability`
-- `schedule.view_details`
-- `schedule.request_assignment`
-- `purchase.create`
-- `permission.manage`
-- `user.manage`
+A Permission answers:
 
-Permissions should describe concrete capabilities rather than large implicit role behaviors.
+> What kind of action may this principal perform?
 
-The permission catalogue must remain explicit, reviewable, and testable.
+The scope answers:
+
+> On which resource or resource context may the principal perform that action?
+
+The MVP uses the following canonical permission identifiers.
+
+### Customer
+
+```text
+customer.read
+customer.write
+```
+
+`customer.read` allows reading customer information.
+
+`customer.write` allows creating and modifying customer information.
+
+### Project
+
+```text
+project.read
+project.write
+project.coordinate
+```
+
+`project.read` allows reading project information.
+
+`project.write` allows creating and modifying project information.
+
+`project.coordinate` allows project coordination activities beyond ordinary project data management.
+
+### Purchasing
+
+```text
+purchase.create
+purchase.grant
+```
+
+`purchase.create` allows creating purchases within the authorized scope.
+
+`purchase.grant` allows granting or delegating purchase authority to another principal, subject to the granting principal's own authority, scope, and constraints.
+
+A purchase permission is not inherently limited to a project. The applicable scope determines whether the purchase is valid for a specific project, organizational overhead, or another supported purchasing context.
+
+### Documents
+
+```text
+document.read
+document.write
+document.sign
+```
+
+`document.read` allows reading documents within the authorized scope.
+
+`document.write` allows creating and modifying documents or document versions within the authorized scope.
+
+`document.sign` allows signing documents within the authorized scope.
+
+### Scheduling
+
+```text
+schedule.view_availability
+schedule.view_details
+schedule.assignment_write
+schedule.assignment_request
+schedule.assignment_grant
+```
+
+`schedule.view_availability` allows viewing scheduling availability without necessarily exposing the reason for an existing assignment.
+
+`schedule.view_details` allows viewing scheduling details where the principal is authorized to see them.
+
+`schedule.assignment_write` allows creating or modifying assignments directly within the authorized scope.
+
+`schedule.assignment_request` allows requesting an assignment or assignment change when direct assignment is not permitted or a workflow requires approval.
+
+`schedule.assignment_grant` allows approving or granting an assignment for another principal within the authorized scope.
+
+### User and Permission Management
+
+```text
+user.manage
+permission.manage
+```
+
+`user.manage` allows managing users and their organizational authorization context within the authorized scope.
+
+`permission.manage` allows managing explicit permission grants and restrictions within the authorized scope and subject to delegation constraints.
+
+`permission.manage` does not constitute unrestricted authority to grant any permission to any principal.
+
+### Canonical MVP Permission Set
+
+The following identifiers are the complete canonical Permission set for the MVP:
+
+```text
+customer.read
+customer.write
+
+project.read
+project.write
+project.coordinate
+
+purchase.create
+purchase.grant
+
+document.read
+document.write
+document.sign
+
+schedule.view_availability
+schedule.view_details
+schedule.assignment_write
+schedule.assignment_request
+schedule.assignment_grant
+
+user.manage
+permission.manage
+```
+
+No additional Permission identifiers are part of the MVP unless explicitly added to this catalogue through an architecture decision.
+
+The Permission catalogue is application policy. Ordinary administrators must not create arbitrary new Permission types at runtime.
 
 ---
 
-## 12. Effective Permissions
+## 12. Permission Grants, Restrictions, Scope and Constraints
 
-Effective authorization is derived from multiple sources.
+Effective authorization is determined from multiple independent dimensions.
 
-Conceptually:
+The general model is:
 
-    Effective Permissions =
-        Role Defaults
-        + Hierarchy Defaults
-        + Explicit Grants
-        - Explicit Restrictions
+```text
+Effective Authorization =
+    Role Defaults
+    + Role/Hierarchy Defaults
+    + Explicit Grants
+    - Explicit Restrictions
+    subject to
+    Scope
+    Policy Constraints
+    Delegation Constraints
+```
 
-    subject to mandatory Policy Constraints
+A Permission alone does not grant unrestricted access.
 
-This is not an unrestricted additive permission system.
+### Explicit Grants
 
-Mandatory policy constraints always have final authority.
+An explicit grant may assign a Permission to a principal for a defined scope.
 
-Examples:
+For example:
 
-- a minor must not perform legally restricted actions
-- an unassigned internal user must not access a project
-- an external customer must not enter the Internal Workspace
-- a user must not delegate permissions they are not authorized to delegate
-- a security-critical permission may require stronger authentication or approval
+```text
+permission = purchase.create
+scope      = PROJECT:123
+```
 
-A configurable grant can therefore never override a mandatory policy constraint.
+This means that the principal may create purchases for Project `123`, provided all other authorization requirements are satisfied.
+
+### Explicit Restrictions
+
+A restriction may prevent an otherwise available Permission from being exercised in a defined scope.
+
+Restrictions must be evaluated by the server and must not be bypassable by ordinary administrative actions.
+
+### Scope
+
+Permissions and scopes are deliberately separate.
+
+A Permission must not encode a specific resource scope in its identifier.
+
+For example, the canonical Permission is:
+
+```text
+purchase.create
+```
+
+not:
+
+```text
+project.purchase_create
+```
+
+The scope determines where the Permission applies:
+
+```text
+purchase.create
+scope = PROJECT:123
+```
+
+or, where supported:
+
+```text
+purchase.create
+scope = ORGANIZATION
+```
+
+The same principle applies to documents, projects, scheduling, users, and other resource domains.
+
+### Constraints
+
+Some Permissions require additional constraints beyond a simple allow/deny decision.
+
+A constraint is not itself a Permission.
+
+For example, purchasing may use a financial limit:
+
+```text
+permission = purchase.create
+scope      = PROJECT:123
+constraint:
+    purchase_limit = 2000 EUR
+```
+
+`purchase_limit` is therefore a constraint on `purchase.create`, not a separate Permission such as `purchase.limit`.
+
+A constraint may be `None` where the applicable policy defines no additional limit.
+
+The server must evaluate such constraints whenever the protected action is executed.
+
+### Delegation Constraints
+
+A principal with `permission.manage` does not automatically have unlimited authority to grant arbitrary Permissions.
+
+A principal may only delegate authority that the principal is itself authorized to delegate.
+
+Delegation must therefore be constrained by:
+
+* the granting principal's own effective authority;
+* the Permission being delegated;
+* the target scope;
+* applicable constraints;
+* applicable policy restrictions;
+* any temporal validity of the grant.
+
+For example, a principal with:
+
+```text
+permission = purchase.create
+scope      = PROJECT:123
+constraint:
+    purchase_limit = 2000 EUR
+```
+
+must not be able to delegate:
+
+```text
+permission = purchase.create
+scope      = PROJECT:123
+constraint:
+    purchase_limit = None
+```
+
+unless the principal independently possesses sufficient authority to delegate that broader purchasing capability.
+
+Permission administration must never provide an implicit privilege-escalation path.
+
+### Default Deny
+
+If no applicable authorization rule grants a requested action, the result is `DENY`.
+
+The absence of an explicit restriction does not imply permission.
 
 ---
 
