@@ -2,804 +2,779 @@
 
 ## 1. Purpose
 
-This document defines the testing strategy and mandatory testing
-requirements for the GlasHaus project.
+Testing is part of the GlasHaus architecture and Definition of Done.
 
-The purpose of the testing strategy is to ensure that GlasHaus is:
+Tests must validate:
 
-- functionally correct
-- secure
-- maintainable
-- reliable
-- predictable under failure conditions
-- safe for offline operation
-- suitable for production use
+- domain behavior
+- authorization boundaries
+- authentication behavior
+- persistence invariants
+- cryptographic invariants
+- synchronization semantics
+- API contracts
+- security-critical failure modes
 
-Tests are part of the implementation and are not considered an optional
-step after development.
+Coverage is a quality indicator, not the purpose of testing.
 
-When production behavior is introduced or changed, the corresponding tests
-must be created or updated as part of the same change.
-
-This document complements `docs/AI_RULES.md`.
-
-The requirements in this document apply to both human-written and
-AI-assisted code.
-
-## 2. Testing Principles
-
-GlasHaus follows these fundamental testing principles.
-
-### 2.1 Test Behavior
-
-Tests should verify observable behavior and business requirements rather
-than implementation details.
-
-Tests must remain useful when internal implementation details change.
-
-### 2.2 Test the Failure Cases
-
-Tests must cover relevant failure conditions in addition to successful
-execution.
-
-Examples include:
-
-- invalid input
-- unauthorized access
-- insufficient permissions
-- missing resources
-- database failures
-- network failures
-- expired authentication
-- synchronization conflicts
-- malformed external data
-
-### 2.3 Deterministic Tests
-
-Tests must be deterministic.
-
-Tests must not depend on:
-
-- execution order
-- developer-specific configuration
-- local filesystem state
-- uncontrolled external services
-- current time without explicit control
-- random values without deterministic seeding or controlled generation
-
-### 2.4 Isolation
-
-Unit tests should be isolated from external infrastructure.
-
-Integration tests may use controlled infrastructure such as temporary
-databases or dedicated test services.
-
-### 2.5 No Test Weakening
-
-Production code must not be changed solely to make a test pass if the
-change would weaken the intended behavior or security of the application.
-
-Tests must not be deleted or weakened merely because they expose a defect.
-
-### 2.6 Security Testing
-
-Security-sensitive functionality requires explicit tests.
-
-Authentication, authorization, data access, document handling and
-synchronization must be tested against both permitted and prohibited
-operations.
-
-### 2.7 Test Naming
-
-Test names must clearly describe the behavior being tested.
-
-Prefer names such as:
-
-test_user_cannot_access_project_of_another_customer
-test_admin_can_assign_abac_permission
-test_expired_access_token_is_rejected
-
-Avoid vague names such as:
-
-test_user
-test_auth
-test_project
-
+Tests must verify both what the system permits and what it must never permit.
 
 ---
 
-## 3. Test Pyramid
+## 2. Testing Principles
 
+GlasHaus follows these principles:
 
-GlasHaus follows a test pyramid.
+1. Security boundaries require explicit tests.
 
-The majority of tests should be fast unit tests.
+2. Negative tests are first-class tests.
 
-                ┌───────────────┐
-                │   E2E Tests   │
-                │  Few / Slow   │
-                └───────┬───────┘
-                        │
-              ┌─────────▼─────────┐
-              │ Integration Tests │
-              │  Moderate / Few   │
-              └─────────┬─────────┘
-                        │
-        ┌───────────────▼───────────────┐
-        │          Unit Tests            │
-        │        Many / Fast             │
-        └───────────────────────────────┘
+3. Authorization tests must verify default-deny behavior.
 
-Test Levels
-Test level	            Purpose	Typical                             execution
-Unit	                Individual functions and components	        Every commit
-Integration	            Multiple backend components	                Every CI run
-API / Contract	        API behavior and schemas	                Every CI run
-Database	            Persistence and migrations	                Every CI run
-Security	            Security boundaries and abuse cases	        Every CI run
-Offline Sync	        Synchronization and conflicts	            Every CI run
-E2E	                    Complete user workflows	                    CI / release validation
+4. Persistence tests must verify database constraints as well as application behavior.
 
-Tests should be implemented at the lowest appropriate level.
+5. Synchronization tests must verify failure and retry behavior, not only successful synchronization.
 
-A business rule that can be tested as a unit test should not require an
-E2E test merely to verify the rule.
+6. Cryptographic tests must verify integrity and failure behavior, not only successful decryption.
 
+7. Tests must be deterministic.
+
+8. Time-dependent behavior must use explicit reference times.
+
+9. Tests must not depend on production secrets or external infrastructure unless explicitly required by an integration test.
+
+10. Tests must not weaken security guarantees for convenience.
+
+11. Architectural invariants should be represented by automated tests where practical.
+
+12. A passing test suite does not replace security review for security-critical design changes.
+
+---
+
+## 3. Test Layers
+
+GlasHaus uses the following test layers:
+
+1. unit tests
+
+2. persistence/integration tests
+
+3. API tests
+
+4. authentication tests
+
+5. authorization/security tests
+
+6. cryptography tests
+
+7. synchronization tests
+
+8. end-to-end tests when the corresponding clients exist
+
+9. migration tests where schema changes are introduced
+
+Each layer has a defined purpose.
+
+A test should be placed at the lowest layer that can meaningfully verify the behavior.
 
 ---
 
 ## 4. Unit Tests
 
-Unit tests verify individual units of application logic in isolation.
+Unit tests cover deterministic domain behavior without requiring external infrastructure.
 
-Typical units include:
+Examples include:
 
-- functions
-- services
-- validators
-- domain logic
-- permission evaluation
-- data transformation
-- calculation logic
-- synchronization algorithms
+- age calculation
+- role/user-type compatibility
+- hierarchy behavior
+- role defaults
+- hierarchy defaults
+- effective permission calculation
+- explicit grants
+- explicit restrictions
+- permission expiration
+- scope evaluation
+- workspace rules
+- domain invariants
+- conflict classification
+- synchronization state transitions
 
-Unit tests must be:
+Age-dependent tests must use an explicit reference date.
 
-- fast
-- deterministic
-- isolated
-- independent of external infrastructure
-
-External dependencies should normally be replaced with controlled test
-doubles where appropriate.
-
-### Location
-
-Unit tests are located under:
-
-backend/tests/unit/
-
-Example
-backend/
-└── tests/
-    └── unit/
-        ├── test_auth.py
-        ├── test_permissions.py
-        └── test_pricing.py
-
-Requirements
-
-New production logic should normally include corresponding unit tests.
-
-Unit tests must cover important:
-
-success cases
-validation failures
-boundary conditions
-error conditions
-security decisions
-
-A high coverage percentage does not replace meaningful tests.
-
+Tests must not depend on the current system clock implicitly.
 
 ---
 
-## 5. Integration Tests
+## 5. Authorization Tests
 
-Integration tests verify that multiple application components work
-correctly together.
+Authorization is a security boundary and requires comprehensive positive and negative testing.
 
-Integration tests are required when correctness depends on interaction
-between components.
+Tests must cover at least:
 
-Examples include:
+- valid authorization
+- unauthenticated requests
+- inactive users
+- invalid user types
+- invalid role/user-type combinations
+- insufficient permissions
+- explicit permission restrictions
+- explicit permission grants
+- expired grants
+- invalid scopes
+- project scope mismatch
+- missing project assignment
+- wrong project
+- missing customer relationship
+- wrong customer
+- missing customer project access
+- Internal Workspace access
+- Customer Workspace access
+- forbidden workspace access
+- hierarchy differences
+- age-dependent restrictions
+- mandatory policy constraints
+- privileged permission administration
+- unauthorized permission delegation
+- self-escalation attempts
+- external users attempting internal access
+- access through manipulated resource identifiers
+- access through direct object URLs
+- unauthorized search results
 
-- API + service layer
-- service + repository
-- repository + database
-- authentication + authorization
-- document service + storage
-- synchronization + database
-- background processing + persistence
+Every important allow rule should have a corresponding deny case.
 
-### Location
+---
 
-Integration tests are located under:
+## 6. Authorization Invariants
 
-backend/tests/integration/
+The following security invariants require explicit automated coverage:
 
-### External Services
+1. Default is deny.
 
-External services should not normally be contacted during ordinary test
-execution.
+2. An inactive user cannot access protected resources.
 
-Controlled test environments, mocks or test containers may be used where
-appropriate.
+3. An internal user without project assignment cannot access project-specific resources.
 
-Real external integrations should be tested separately in dedicated
-integration environments.
+4. Knowing a project ID does not grant access.
 
-### Database Integration
+5. Knowing a project address does not grant access.
 
-Database integration tests must use an isolated test database or equivalent
-controlled database environment.
+6. Knowing a document ID does not grant access.
 
-Tests must not modify developer or production databases.
+7. Customer access does not imply Internal Workspace access.
 
-Database state must be reset or isolated between tests where required.
+8. External users cannot cross workspace boundaries.
 
-### Requirements
+9. Permission grants cannot bypass mandatory policy constraints.
 
-Integration tests must verify:
-- correct component interaction
-- transaction behavior
-- persistence behavior
-- error propagation
-- authorization boundaries
-- relevant infrastructure behavior
+10. A user cannot grant permissions they are not authorized to delegate.
 
-## 6. API / Contract Tests
+11. A restriction cannot be bypassed by a less-specific inherited permission.
 
-API tests verify the externally observable behavior of the GlasHaus API.
+12. Authorization is evaluated server-side.
 
-They must verify:
+13. Partial resource representations do not contain unauthorized fields.
 
-- HTTP methods
-- status codes
-- request validation
-- response structure
-- response data types
+14. Unauthorized resources are not exposed through search.
+
+15. Authorization is evaluated before protected content is decrypted.
+
+---
+
+## 7. Authentication Tests
+
+Authentication tests cover the lifecycle of authenticated security contexts.
+
+Required scenarios include:
+
+- valid login
+- invalid credentials
+- disabled/inactive user
+- session creation
+- session expiration
+- session revocation
+- logout
+- revoked device
+- device registration
+- device lifecycle transitions
+- 2FA
+- recovery
+- invalid recovery attempts
+- suspicious authentication behavior where implemented
+- concurrent/revoked sessions where applicable
+
+Tests must verify that authentication failure cannot result in an authenticated authorization context.
+
+Secrets must never appear in:
+
+- test output
+- logs
+- snapshots
+- fixtures
+- committed test data
+
+---
+
+## 8. Persistence Tests
+
+Persistence tests verify both relational integrity and application persistence behavior.
+
+Required coverage includes:
+
+- primary key behavior
+- UUIDv7 identifier persistence
+- foreign keys
+- uniqueness constraints
+- nullability constraints
+- check constraints where applicable
+- valid relationships
+- invalid relationships
+- user lifecycle
+- employment history
+- role/user-type compatibility
+- permission grant persistence
+- permission grant lifecycle
+- customer relationships
+- project/customer relationships
+- project assignments
+- customer project access
+- workspace boundaries
+- document/workspace relationships
+- document/project relationships
+- document versions
+- historical state
+- deactivation behavior
+- transaction atomicity
+- concurrent updates where applicable
+
+Database constraints must complement application validation.
+
+A test must not assume that application validation alone is sufficient to maintain relational integrity.
+
+---
+
+## 9. Migration Tests
+
+Schema changes require migration testing.
+
+Migration tests must verify:
+
+- migration applies successfully to the supported starting schema
+- migration produces the expected schema
+- existing required data is preserved
+- constraints are correctly introduced
+- indexes are correctly introduced
+- downgrade behavior is explicitly understood where supported
+- irreversible operations are documented
+- representative production-like data remains valid
+
+Production schema changes must use Alembic.
+
+A model change without the corresponding migration is incomplete when the persisted schema is affected.
+
+---
+
+## 10. API Tests
+
+API tests verify externally observable server behavior.
+
+They should cover:
+
 - authentication requirements
 - authorization requirements
-- error responses
+- request validation
+- response validation
+- correct HTTP status behavior
+- resource scoping
+- workspace boundaries
+- error behavior
+- pagination where applicable
+- search authorization
+- upload/download authorization
+- idempotency where applicable
+- concurrency behavior where applicable
 
-API tests must ensure that implementation changes do not unintentionally
-break clients.
+API tests must verify that sensitive fields are absent when the caller is not authorized to receive them.
 
-### API Contracts
+A client-side field-hiding mechanism is not considered an authorization test.
 
-Public API contracts should be explicitly defined.
+---
 
-Changes to API schemas must be intentional and documented.
+## 11. Data Minimization Tests
 
-Breaking API changes require explicit review.
+Where resources have multiple visibility levels, tests must verify the returned representation.
 
-### Location
+For example:
 
-API tests may be located under:
+A caller with:
 
-backend/tests/api/
+    schedule.view_availability
 
-or under the integration test structure when the project architecture
-makes that more appropriate.
+may receive:
 
-The final test layout must remain consistent across the project.
+    technician
+    availability
 
-## 7. Database Tests
+but must not receive:
 
-Database tests verify persistence, schema integrity and database-related
-application behavior.
+    customer
+    project address
+    appointment details
+    internal notes
 
-Tests should cover:
+Tests must assert both the presence of permitted fields and the absence of forbidden fields.
 
-- model persistence
-- relationships
-- constraints
-- uniqueness requirements
-- foreign keys
-- transactions
-- rollback behavior
-- migrations
-- serialization and deserialization where applicable
+The same principle applies to:
 
-### Migrations
+- API responses
+- search results
+- exports
+- synchronization payloads
+- downloaded metadata
+- federation payloads
+- future client-specific representations
 
-Alembic migrations must be tested against a controlled database.
+---
 
-A migration must be capable of upgrading a supported previous schema to
-the current schema.
+## 12. Cryptography Tests
 
-Where practical, downgrade behavior should also be validated.
+Cryptographic implementations require explicit success and failure tests.
 
-### Isolation
+Required scenarios include:
 
-Database tests must never use production databases.
+- encryption/decryption round trip
+- wrong key
+- wrong key version
+- ciphertext tampering
+- authentication-tag failure
+- metadata tampering
+- nonce uniqueness
+- invalid nonce handling
+- key rotation
+- current key selection
+- decrypt-only historical keys
+- retired keys
+- invalid encryption version
+- corrupted ciphertext
+- corrupted object detection
+- authorization before decryption
+- encrypted local storage
+- backup recovery
+- key availability during recovery
 
-Developer databases must not be modified by automated tests unless the
-test environment explicitly provides an isolated disposable database.
+Known test vectors should be used where applicable.
 
-### Data Integrity
+Tests must never use production cryptographic keys.
 
-Important business constraints must be enforced and tested at the
-appropriate layer.
+Cryptographic tests must verify the behavior of the selected cryptographic library and the GlasHaus encryption envelope.
 
-Database constraints must not be assumed to exist merely because the
-application validates the same condition.
+They must not attempt to prove the mathematical security of standard cryptographic primitives.
 
-## 8. Security Tests
+---
 
-Security testing is mandatory for security-sensitive GlasHaus
-functionality.
+## 13. Synchronization Tests
 
-Security tests verify that security controls cannot be bypassed through
-invalid input, manipulated requests or unauthorized access.
+Synchronization tests must cover the complete operation lifecycle.
 
-Security testing should cover:
+Required scenarios include:
 
-- authentication
-- authorization
-- RBAC
-- ABAC
-- resource ownership
-- session management
-- token validation
-- input validation
-- sensitive data handling
-- file access
-- document permissions
-- API access control
-- audit logging where applicable
-
-### Negative Testing
-
-Security tests must explicitly verify that prohibited operations fail.
-
-Examples:
-
-unauthenticated user -> protected endpoint
-authenticated user -> unauthorized project
-employee -> administrative endpoint
-customer -> another customer's document
-expired token -> protected endpoint
-invalid permission -> protected resource
-
-Security tests must verify the expected failure response without exposing
-sensitive information.
-
-## 9. Authentication & Authorization Tests
-
-Authentication and authorization require dedicated tests.
-
-### Authentication Tests
-
-Authentication tests should cover:
-
-- valid credentials
-- invalid credentials
-- disabled accounts
-- expired sessions
-- invalid tokens
-- revoked tokens
-- password changes
-- second-factor authentication when implemented
-- authentication failure handling
-
-### Authorization Tests
-
-Authorization tests must verify both positive and negative cases.
-
-Examples:
-Admin -> allowed
-Employee -> allowed only for permitted resource
-Customer -> allowed only for own resources
-Unauthenticated user -> denied
-Unauthorized role -> denied
-Unauthorized ABAC condition -> denied
-
-### RBAC
-
-Role-based permissions must be tested independently of individual users
-where practical.
-
-### ABAC
-
-Attribute-based permissions must test relevant attributes such as:
-
-user
-role
-project
-customer
-resource
-ownership
-organizational context
-action
-resource state
-
-Authorization decisions must be deterministic and testable.
-
-Authentication must never be used as a substitute for authorization.
-
-## 10. Offline Synchronization Tests
-
-Offline synchronization is a core GlasHaus requirement and therefore
-requires dedicated testing.
-
-Synchronization tests must verify:
-
-- offline creation
-- offline modification
-- offline deletion
-- synchronization after reconnection
-- duplicate operations
-- version handling
-- conflict detection
-- conflict resolution
-- retry behavior
-- partial synchronization failures
-- interrupted synchronization
-- idempotency
-
-### Conflict Testing
-
-Every synchronized entity must have a defined conflict strategy.
-
-Tests must verify that conflicts are:
-
-- detected
-- represented correctly
-- resolved according to the defined policy
-- never silently lost
-
-### Network Failure Testing
-
-Synchronization tests must simulate relevant network failures such as:
-
-- connection loss
-- timeout
-- server unavailable
-- partial response
+- local mutation + outbox atomicity
+- application restart with pending operations
+- device restart with pending operations
+- network loss
+- server outage
 - retry
-- reconnection
+- idempotency
+- lost response followed by retry
+- duplicate operation submission
+- concurrency conflict
+- rejected operation
+- authorization change
+- project access revocation
+- expired authorization
+- cursor advancement
+- atomic change application + cursor advancement
+- partial batch failure
+- tombstones
+- binary asset transfer
+- interrupted asset transfer
+- integrity verification
+- resynchronization
+- newly granted access
+- preservation of pending local work
 
-### Idempotency
+Tests must verify that a retry cannot duplicate a successful server-side mutation.
 
-Repeating the same synchronization request must not unintentionally
-duplicate or corrupt data.
+---
 
-Synchronization operations should be designed and tested for idempotent
-behavior where appropriate.
+## 14. Synchronization Security Tests
 
-## 11. End-to-End Tests
+Synchronization must be tested as an authorization boundary.
 
-End-to-end tests verify complete user workflows across multiple system
-components.
+Tests must verify that:
 
-E2E tests should represent important real-world GlasHaus workflows.
+1. Offline authorization is not permanent authorization.
+
+2. The server re-evaluates authorization when receiving a mutation.
+
+3. A revoked project assignment causes subsequent unauthorized mutations to be rejected.
+
+4. Unauthorized synchronization data is not included in a pull response.
+
+5. A newly granted project does not expose unrelated projects.
+
+6. A cursor cannot be used to bypass authorization.
+
+7. A resynchronization cannot become an unrestricted database export.
+
+8. Sensitive synchronization payloads remain protected.
+
+9. Pending local work is not silently discarded during resynchronization.
+
+10. Replayed operations do not duplicate domain mutations.
+
+---
+
+## 15. Conflict Tests
+
+Conflict handling is domain-specific.
+
+Tests must verify that conflicts are not silently converted into overwrites.
 
 Examples include:
 
-Login
-  -> authentication
-  -> authorization
-  -> project selection
-  -> calendar entry
-  -> time tracking
-  -> synchronization
+- append-only photographs
+- mergeable metadata
+- concurrent project metadata updates
+- scheduling conflicts
+- signed document conflicts
+- financial document conflicts
 
-  Other examples:
+For each synchronizable entity, the domain must define whether a concurrent mutation is:
 
-  Customer
-  -> project
-  -> document
-  -> photo
-  -> PDF generation
-  -> signature
-  -> document storage
+- automatically mergeable
+- last-writer-wins where explicitly acceptable
+- rejected
+- requires review
+- immutable
 
-  Employee
-  -> scan QR code
-  -> inventory update
-  -> backend synchronization
-  -> stock level calculation
-  -> low-stock warning
+The synchronization engine must not invent domain semantics.
 
-### Requirements
+---
 
-E2E tests should focus on critical business workflows.
+## 16. Binary Asset Tests
 
-They should not attempt to test every possible implementation detail.
+Binary assets use a dedicated synchronization path.
 
-E2E tests are slower and more expensive than unit tests and should
-therefore remain limited to important workflows.
+Tests must cover:
 
-E2E testing will become increasingly important as the browser and Android
-applications are implemented.
+- authorization
+- content validation
+- content digest verification
+- encryption
+- upload retry
+- download retry
+- interrupted transfer
+- resumability where supported
+- duplicate transfer handling
+- size limits
+- corrupted content
+- unauthorized asset access
+- expired/invalid asset references
 
-## 12. Test Fixtures
+Object-storage access must never bypass application authorization.
 
-Test fixtures provide controlled reusable test data and infrastructure.
+---
 
-Fixtures may provide:
+## 17. Federation Tests
 
-- users
-- roles
-- permissions
-- customers
-- projects
-- documents
-- database sessions
+Federation is a future trust boundary.
+
+When implemented, federation tests must cover:
+
+- peer authentication
+- trust establishment
+- invalid peer
+- revoked peer
+- message integrity
+- invalid signature
+- replay protection
+- malformed messages
+- authorization
+- resource scope
+- key rotation
+- trust revocation
+- protocol/version incompatibility
+- failure handling
+
+A remote authorization decision must never automatically become a local authorization decision.
+
+---
+
+## 18. Device and Offline Tests
+
+Device and offline workflows require explicit testing because the server may temporarily be unavailable.
+
+Tests must cover:
+
+- device registration
+- device activation
+- device revocation
+- offline session lifetime
+- cached authorization lifetime
+- encrypted local storage
+- expired offline authorization
+- synchronization after revocation
+- synchronization after permission changes
+- synchronization after project reassignment
+- recovery after application restart
+- recovery after device restart
+
+Offline behavior must remain bounded by the security policy.
+
+---
+
+## 19. Audit Tests
+
+Security-sensitive operations should generate the required audit events.
+
+Tests should verify:
+
+- actor identity
+- action
+- resource type
+- resource ID
+- result
+- timestamp
+- correlation/request identifier
+- relevant authorization context where required
+
+Tests must also verify that audit records do not unnecessarily contain:
+
+- passwords
 - authentication tokens
-- test files
-- synchronization states
+- private keys
+- encryption keys
+- plaintext secrets
+- unnecessarily sensitive document content
 
-Fixtures must remain explicit and understandable.
+Audit failures must not silently turn into successful security-sensitive operations where the architecture requires auditability as a prerequisite.
 
-Fixtures must not introduce hidden dependencies between tests.
+---
 
-### Fixture Isolation
+## 20. Negative Testing
 
-Tests must not rely on mutations made by previous tests.
+Negative testing is a core security requirement.
 
-Reusable fixtures should create fresh state where practical.
+Tests should deliberately attempt:
 
-### Sensitive Test Data
+- unauthorized resource access
+- invalid identifiers
+- guessed identifiers
+- manipulated URLs
+- wrong project IDs
+- wrong customer IDs
+- unauthorized workspace access
+- expired permissions
+- revoked devices
+- revoked project assignments
+- invalid permission delegation
+- self-escalation
+- malformed synchronization operations
+- replayed operations
+- tampered ciphertext
+- tampered synchronization payloads
+- invalid federation messages
 
-Real production data must never be used as test fixtures.
+The expected result must be explicit and deterministic.
 
-Test credentials, documents and personal data must be synthetic.
+---
 
-## 13. Test Data
+## 21. Property and Invariant Testing
 
-Test data must be deterministic, synthetic and safe.
+Where practical, property-based or invariant tests should be used for security-critical state transitions.
 
-Production customer, employee or financial data must never be copied into
-the test environment.
+Examples:
 
-### Test Data Requirements
+- authorization never allows an invalid principal
+- expired grants never contribute to effective permissions
+- revoked devices cannot create valid authenticated sessions
+- duplicate operation IDs cannot create duplicate mutations
+- cursor advancement never skips unapplied changes
+- tampered ciphertext never decrypts successfully
+- unauthorized resources never appear in authorized search results
 
-Test data should cover:
+Property-based testing is complementary to scenario-based tests.
 
-- normal values
-- minimum values
-- maximum values
-- missing values
-- invalid values
-- boundary values
-- conflicting values
-- unauthorized ownership
-- malformed external input
+---
 
-### Sensitive Data
+## 22. Test Data and Secrets
 
-Test data that resembles sensitive information must remain clearly
-synthetic.
+Test data must be synthetic unless a specific controlled fixture is required.
 
-Secrets must never be embedded in test source code.
+Production data must not be copied into the normal test suite.
 
-Test secrets should be injected through controlled test configuration
-where required.
+Test secrets must be:
 
-### External Data
+- generated for testing
+- isolated from production
+- excluded from source control when sensitive
+- rotated where appropriate
 
-Data received from external integrations must be tested using representative
-fixtures.
+Private keys and encryption keys used in tests must never be production keys.
+
+Tests must cleanly distinguish:
+
+- test credentials
+- development credentials
+- production credentials
+
+---
+
+## 23. External Dependencies
+
+Tests should avoid unnecessary dependence on external services.
+
+Where external dependencies are required, the test architecture should provide controlled test doubles or dedicated integration environments.
 
 Examples include:
 
-- IDS Connect responses
-- ZUGFeRD documents
-- XML documents
-- QR code data
-- OCR results
-- supplier price data
+- object storage
+- mail delivery
+- KMS/secret manager
+- federation peers
+- external identity providers
 
-## 14. Coverage
+Security-critical integrations should additionally have real integration tests against supported production-like implementations before release.
 
-Code coverage is a quality indicator but is not a substitute for meaningful
-tests.
+---
 
-Coverage should be used to identify untested production logic.
+## 24. Determinism and Time
 
-### Requirements
+Tests must be deterministic.
 
-Coverage must be measured for the backend test suite.
+Time-dependent behavior must use injectable or explicitly controlled reference time.
 
-The project currently uses `pytest-cov`.
+This applies to:
 
-Coverage reports should identify:
+- age calculation
+- permission validity
+- employment validity
+- session expiration
+- device authorization
+- temporary grants
+- synchronization timestamps
+- key rotation
+- retention behavior
 
-- total coverage
-- missing lines
-- missing branches where enabled
+Tests must not rely on arbitrary sleeps or the wall clock when deterministic time control is possible.
 
-### Quality Principle
+---
 
-A high coverage percentage does not guarantee correctness.
+## 25. Coverage
 
-The project prioritizes:
+The project currently requires at least 90% total test coverage.
 
-1. correct behavior
-2. security
-3. meaningful test cases
-4. important edge cases
-5. maintainability
-6. coverage
+Coverage must not be increased by:
 
-Coverage must not be artificially increased through meaningless tests.
+- deleting tests
+- weakening assertions
+- excluding meaningful production code
+- replacing behavior tests with trivial execution tests
+- artificially executing code without validating behavior
 
-### Exceptions
+Missing coverage should normally result in a test for meaningful behavior.
 
-Generated code, configuration-only code or other explicitly justified
-exceptions may be excluded from coverage where appropriate.
+Coverage thresholds apply to quality control and do not replace architectural or security testing.
 
-Such exclusions must be documented.
+Security-critical code may require substantially stronger coverage than the global minimum.
 
-## 15. Local Quality Gates
+---
 
-Developers must be able to execute the primary quality gates locally
-before committing changes.
+## 26. Quality Gate
 
-The current GlasHaus backend quality gates include:
+A normal backend change should pass:
 
-- Ruff linting
-- Ruff formatting
-- MyPy type checking
-- Unit tests
-- Integration tests when applicable
+    ruff check .
+    ruff format --check .
+    mypy app
+    pytest
+    git diff --check
 
-### Pre-Commit
+Where applicable, changes must additionally pass:
 
-The repository uses `pre-commit` to execute configured quality checks.
-
-Before committing changes, developers should run:
-
-pre-commit run --all-files
-
-### Backend Tests
-
-Backend tests can be executed through:
-
-pytest
-
-Specific test groups may be executed individually, for example:
-
-pytest backend/tests/unit
-
-The exact commands are defined by the repository configuration and may
-evolve as the project grows.
-
-### Rule
-
-A developer must not bypass a failing quality gate merely to create a
-commit.
-
-The underlying problem must be fixed or explicitly documented.
-
-## 16. CI Quality Gates
-
-The GlasHaus CI pipeline must validate the repository independently of
-the developer's local environment.
-
-CI must eventually execute the relevant quality gates including:
-
-- dependency installation
-- Ruff linting
-- Ruff formatting validation
-- MyPy
-- unit tests
+- migration tests
 - integration tests
-- coverage reporting
-- security tests
-- database migration tests where applicable
+- synchronization tests
+- cryptography tests
+- API tests
+- end-to-end tests
+- security-specific test suites
 
-### Reproducibility
+The exact CI command set is defined by the project tooling.
 
-CI must use a controlled and reproducible environment.
+A change must not be considered complete merely because the default unit test command passes.
 
-The CI environment must not depend on files or configuration that exist
-only on a developer's machine.
+---
 
-### Pull Requests
+## 27. Definition of Done
 
-Pull requests must not be considered ready for merge while required
-quality gates are failing.
+A security-, persistence-, synchronization- or domain-relevant change is complete only when:
 
-### Future CI Extensions
+- behavior is tested
+- relevant negative/security cases are tested
+- affected architectural invariants are tested
+- API behavior is tested where applicable
+- migrations exist where required
+- documentation is updated
+- quality checks pass
+- no unrelated regressions are introduced
 
-As GlasHaus grows, CI may additionally include:
+Security-sensitive changes require explicit review of the affected security boundary.
 
-- dependency vulnerability scanning
-- secret scanning
-- container image scanning
-- API contract validation
-- E2E testing
-- mobile application tests
-- frontend tests
+---
 
-## 17. Definition of Done
+## 28. Architectural Test Invariants
 
-A production change is considered complete only when all applicable
-requirements have been fulfilled.
+The following invariants should remain continuously testable:
 
-### Code
+1. Authorization is server-side.
 
-- implementation is complete
-- code follows the project architecture
-- type annotations are present
-- documentation is appropriate
-- no unnecessary complexity was introduced
+2. Default is deny.
 
-### Tests
+3. Internal project access requires explicit assignment.
 
-- appropriate unit tests exist
-- appropriate integration tests exist
-- API/contract tests exist where applicable
-- database tests exist where applicable
-- security tests exist for security-sensitive behavior
-- offline synchronization tests exist for synchronization behavior
-- E2E tests exist for critical workflows where applicable
+4. Customer project access requires the applicable customer relationship and project access.
 
-### Quality Gates
+5. Customer users cannot access Internal Workspace.
 
-The applicable quality gates pass:
+6. Permission administration is itself authorized.
 
-- Ruff
-- Ruff format
-- MyPy
-- Pytest
-- pre-commit
-- CI checks
+7. Permission grants cannot bypass mandatory policy constraints.
 
-### Security
+8. Sensitive data is not exposed through unauthorized fields, search or synchronization.
 
-- no secrets were introduced
-- authorization boundaries were considered
-- sensitive data handling was reviewed
-- security-relevant failure cases are tested
+9. Authorization is evaluated before protected content is decrypted.
 
-### Database
+10. Local mutations and required outbox entries are atomic.
 
-If database behavior changed:
+11. Synchronization operations are idempotent.
 
-- Alembic migrations exist
-- migrations have been tested
-- data integrity has been considered
+12. Cursor advancement is atomic with change application.
 
-### Documentation
+13. Conflicts are explicit and never silently overwrite protected domain state.
 
-Documentation must be updated when:
+14. Pending offline work survives synchronization failure.
 
-- public behavior changes
-- API behavior changes
-- architecture changes
-- security behavior changes
-- synchronization behavior changes
-- configuration changes
+15. Cryptographic tampering is detected.
 
-### Repository State
+16. Production secrets are never used in tests.
 
-Before completion:
+17. Database relationships are enforced by persistence constraints where applicable.
 
-git status
+18. Historical security-relevant state is preserved according to retention policy.
 
-must show only intentional changes.
+19. Federation does not bypass local authorization.
 
-The final change must be reviewable and contain no unrelated modifications.
-
-### AI-Assisted Changes
-
-AI-assisted changes follow the same Definition of Done as
-human-written changes.
-
-AI assistance does not reduce testing, security, documentation or review
-requirements.
+20. Security-critical failures fail closed.

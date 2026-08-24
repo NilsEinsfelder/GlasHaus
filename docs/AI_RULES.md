@@ -4,9 +4,9 @@
 
 This document defines the mandatory rules for AI-assisted development within the GlasHaus repository.
 
-AI-generated code is treated exactly like human-written production code.
+AI-generated code is production code and must be treated exactly like human-written code.
 
-Every change must therefore be:
+Every change must be:
 
 - understandable
 - maintainable
@@ -16,379 +16,461 @@ Every change must therefore be:
 - lint-clean
 - type-safe
 
-Detailed testing requirements are defined in `docs/TESTING.md`.
+AI assistance does not lower the review, testing, security, or documentation requirements of the project.
 
 ---
 
 ## 2. Source of Truth
 
-The following documents define the current architectural direction:
+The following documents define the current architectural and engineering direction of GlasHaus:
 
 1. `docs/ARCHITECTURE.md`
-2. `docs/SECURITY.md`
-3. `docs/CRYPTOGRAPHY.md`
-4. `docs/SYNC.md`
-5. `docs/Roadmap.md`
+2. `docs/IDENTITY_AUTHORIZATION.md`
+3. `docs/PERSISTENCE_MODEL.md`
+4. `docs/SECURITY.md`
+5. `docs/CRYPTOGRAPHY.md`
+6. `docs/SYNC.md`
+7. `docs/Roadmap.md`
+8. `docs/TESTING.md`
 
-If another document conflicts with these documents, the conflict must be resolved before implementing architectural changes.
+The documents have different purposes:
 
-The architecture documents describe target behavior. They do not imply that the functionality is already implemented.
+- Architecture documents define system structure and architectural boundaries.
+- Security and authorization documents define security-sensitive behavior.
+- Persistence documentation defines the intended database/domain persistence model.
+- Testing documentation defines the required verification strategy.
+- The roadmap defines planned work and sequencing; it is not itself a technical authority.
 
----
+If two authoritative design documents conflict, implementation must stop and the conflict must be resolved first.
 
-## 3. Core Development Principles
+The documentation describes the target architecture. It does not imply that every described feature is already implemented.
 
-### 3.1 Python-first Backend
-
-The backend is implemented primarily in Python.
-
-Current backend foundation:
-
-- Python 3.14
-- FastAPI
-- SQLAlchemy
-- Alembic
-- PostgreSQL in production
-- SQLite for development/tests where useful
-
-Major technology changes require an explicit architectural decision.
-
-### 3.2 Minimal Complexity
-
-Do not introduce abstractions merely because they may be useful later.
-
-Prefer:
-
-- simple modules,
-- explicit dependencies,
-- small interfaces,
-- concrete implementations,
-- incremental evolution.
-
-Generic frameworks for synchronization, authorization, encryption or domain behavior must not be built before a real use case requires them.
-
-### 3.3 Vertical Slices
-
-Prefer completing one coherent workflow over implementing many disconnected subsystems.
-
-A vertical slice should normally include the required:
-
-- domain behavior,
-- persistence,
-- API,
-- tests,
-- authorization,
-- security considerations.
+Implementation status must remain distinguishable from planned or designed behavior.
 
 ---
 
-## 4. Architecture and Dependency Direction
+## 3. Repository-First Development
 
-The backend follows this conceptual dependency direction:
+Before making a non-trivial change, AI-assisted development must begin by inspecting the current repository state.
 
-```text
-API / Transport
-      ↓
-Application Services
-      ↓
-Domain
-      ↓
-Infrastructure
-```
+At minimum, inspect:
 
-Infrastructure contains technical implementations such as:
+- relevant source files
+- relevant tests
+- relevant documentation
+- current Git status
+- existing implementation constraints
 
-- database access,
-- object storage,
-- mail,
-- cryptographic providers,
-- external integrations.
+For architectural or security-sensitive changes, inspect all directly related design documents before proposing implementation.
 
-Domain logic must not depend directly on FastAPI, HTTP requests, SQLAlchemy sessions or external service clients.
+Do not assume that a previous conversation, previous implementation, or previous plan still represents the current repository.
 
-API endpoints must remain thin.
+The repository is the current implementation source of truth.
 
-Business rules belong in application/domain code.
-
-Database access belongs in infrastructure/data-access components.
+The current architectural documentation is the design source of truth.
 
 ---
 
-## 5. Code Quality
+## 4. Architecture Before Implementation
 
-Production code must:
+Architectural decisions must be made before implementing code that depends on them.
 
-- pass Ruff,
-- pass Ruff formatting,
-- pass MyPy,
-- use meaningful names,
-- use appropriate type annotations,
-- avoid unnecessary complexity,
-- follow separation of concerns.
+When a requested change exposes an unresolved architectural question:
 
-Quality gates must not be bypassed without documented justification.
+1. identify the question;
+2. explain the relevant alternatives;
+3. state the recommended option and its trade-offs;
+4. obtain agreement before implementing the affected architecture.
 
----
+Do not silently resolve significant architectural questions inside implementation code.
 
-## 6. Testing
+Do not introduce abstractions merely because they might be useful in the future.
 
-Every production behavior introduced or changed by AI must have appropriate automated tests.
+Prefer the simplest architecture that satisfies the current requirements while preserving explicitly approved future extension points.
 
-Tests must validate behavior rather than merely increase coverage.
-
-Existing tests must not be weakened or removed merely to make a change pass.
-
-Critical security, persistence, synchronization and domain behavior requires explicit tests.
-
-The repository's `docs/TESTING.md` is part of the Definition of Done.
+Future requirements may influence interfaces and boundaries, but must not result in speculative implementations.
 
 ---
 
-## 7. Documentation
+## 5. Current Architectural Baseline
 
-Public functions and APIs must be documented where appropriate.
+GlasHaus is a self-hosted modular monolith.
 
-Production functions require:
+One GlasHaus server represents one company's local installation and therefore forms its own organizational and primary trust boundary.
 
-- type annotations,
-- return type annotations,
-- clear naming,
-- concise docstrings where appropriate.
+Do not introduce a local `organization_id` multi-tenant layer unless an explicit architecture decision changes this model.
 
-Complex logic should contain comments explaining intent where the code alone is insufficient.
+Independent GlasHaus servers are separate trust domains.
 
-Comments must not merely restate the implementation.
-
-Architectural decisions must be documented before or together with implementation.
+Future communication or data exchange between GlasHaus servers must therefore be designed as federation between trust domains rather than as local multi-tenancy.
 
 ---
 
-## 8. Database Rules
+## 6. Identity Rules
 
-Production database schema changes MUST use Alembic migrations.
+`User` is the central human identity.
 
-Never rely on:
+A User has exactly one user type:
 
-```python
-Base.metadata.create_all()
-```
+- `INTERNAL`
+- `EXTERNAL`
 
-for production schema management.
+A User has exactly one role.
 
-`create_all()` may be used by isolated development/test helpers when appropriate.
+Do not implement multiple simultaneous roles unless the architecture is explicitly changed.
 
-Production database changes must be reproducible from migrations.
+Internal users may have an applicable employment hierarchy level.
 
-Database constraints should be enforced at the database layer where practical.
+External business relationships are represented separately from the User identity.
+
+A Customer is a business/domain entity, not a User Type.
+
+Do not use `customer` as the general external user type.
+
+Future external relationships such as suppliers, tax advisors, or partner organizations must remain compatible with this separation.
 
 ---
 
-## 9. Security First
+## 7. Age and Personal Data
 
-Security applies to every component.
+Never persist a mutable `age` value.
 
-Never commit:
+Persist `date_of_birth`.
 
-- passwords,
-- API keys,
-- private keys,
-- access tokens,
-- refresh tokens,
-- database credentials,
-- encryption keys,
-- production secrets.
+Age-dependent rules must calculate the current age from the stored birth date and the relevant current or reference date.
 
-Secrets must be supplied through secure configuration or secret-management infrastructure.
+Tests for age-dependent behavior must use explicit reference dates so that they remain deterministic.
+
+Do not duplicate derived personal data merely for convenience unless an explicit persistence decision justifies it.
+
+Personal data must be handled according to the applicable security and privacy requirements defined by the project.
+
+---
+
+## 8. Authorization
+
+Authorization is server-side and default-deny.
+
+The client is never the final authorization authority.
+
+A role does not automatically grant unrestricted access to resources.
+
+Effective authorization is determined by the authorization model defined in `docs/IDENTITY_AUTHORIZATION.md`.
+
+The implementation must preserve the distinction between:
+
+- User
+- User Type
+- Role
+- Hierarchy Level
+- Permission
+- Permission Grant or Restriction
+- Resource
+- Scope
+- Workspace
+- Security Classification
+
+Do not collapse these concepts merely to simplify implementation.
+
+Permission changes must be explicit, constrained by policy, and auditable where required.
+
+Do not implement a generic administrator mechanism that can silently grant arbitrary permissions.
+
+Security-sensitive authorization rules must have explicit positive and negative tests.
+
+Internal project access requires explicit project assignment where defined by the authorization model.
+
+Do not introduce convenience or emergency access paths that bypass normal authorization without an explicit architecture and security decision.
+
+Customer access must remain separated from the Internal Workspace.
+
+The client-side application may hide unavailable functions for usability, but server-side authorization must always enforce the actual security boundary.
+
+---
+
+## 9. Persistence
+
+The persistence model is defined by `docs/PERSISTENCE_MODEL.md`.
+
+Implement persistence according to the documented domain model rather than designing database structure independently inside individual features.
+
+Production schema changes use Alembic.
+
+Do not use `Base.metadata.create_all()` as a production migration mechanism.
+
+Database constraints should enforce important invariants where practical.
+
+Application-level validation must not be considered a replacement for important database integrity constraints when the invariant can safely be enforced by the database.
+
+Do not introduce speculative generic persistence abstractions.
+
+Do not couple domain authorization decisions unnecessarily to SQLAlchemy implementation details.
+
+Persistence changes require appropriate migration and test coverage.
+
+---
+
+## 10. Security
+
+Security-sensitive behavior must be designed before implementation.
 
 Authentication and authorization are separate concerns.
 
-The client must never be treated as the final authorization authority.
+The client is never the final authorization authority.
+
+Never commit:
+
+- passwords
+- API keys
+- access tokens
+- refresh tokens
+- private keys
+- encryption keys
+- production credentials
+- other secrets
+
+Do not introduce a temporary insecure implementation with the intention of replacing it later unless that temporary behavior is explicitly approved as safe for the intended environment.
+
+Security boundaries must fail closed.
+
+Unexpected errors, missing identity information, invalid credentials, missing permissions, and ambiguous resource ownership must not result in access being granted.
+
+Security-sensitive changes must include appropriate negative tests.
+
+Security guarantees must be stated precisely. Do not describe a mechanism as secure merely because it uses a standard component such as TLS.
 
 ---
 
-## 10. Cryptography
+## 11. Cryptography
 
-Cryptographic implementations must use established, reviewed primitives and libraries.
+Use established cryptographic libraries and reviewed primitives.
 
 Never invent cryptographic algorithms.
 
-Encryption decisions must follow `docs/CRYPTOGRAPHY.md`.
+Never invent a custom encryption protocol without an explicit architecture and security decision.
 
-Password storage must use password-specific password hashing.
+Encryption keys must be separated from encrypted data.
 
-Encryption keys must be separated from encrypted application data.
+Key management is part of the cryptographic design and must not be improvised during feature implementation.
 
-Crypto implementation must not begin before the corresponding architecture decision has been documented.
+Crypto implementation must follow `docs/CRYPTOGRAPHY.md`.
 
----
+Do not claim end-to-end encryption merely because TLS is used.
 
-## 11. Sensitive Data
+Do not store secrets or encryption keys in source code, test fixtures intended for production, database records, or configuration committed to Git unless the documented design explicitly requires a protected representation.
 
-Sensitive information must be handled according to:
-
-- `docs/SECURITY.md`
-- `docs/CRYPTOGRAPHY.md`
-
-Logs must never contain unnecessary sensitive information.
-
-Do not expose:
-
-- passwords,
-- tokens,
-- encryption keys,
-- document contents,
-- unnecessary personal data.
+Crypto changes require appropriate security tests and, where applicable, migration and recovery considerations.
 
 ---
 
-## 12. Authentication and Authorization
+## 12. Synchronization and Federation
 
-Authentication establishes identity.
-
-Authorization determines whether an authenticated actor may perform an action.
-
-The server is authoritative for:
-
-- authentication state,
-- authorization,
-- resource access,
-- device access,
-- synchronization operations.
-
-Offline permissions are usability mechanisms and do not replace server authorization.
-
----
-
-## 13. Offline Synchronization
-
-GlasHaus is designed to support offline field workflows.
-
-However, synchronization is implemented incrementally.
-
-An entity must not become synchronizable merely because a generic synchronization framework exists.
+Synchronization is introduced only for entities with a concrete offline or cross-system requirement.
 
 Before synchronizing an entity, define:
 
-- identity,
-- lifecycle,
-- authorization scope,
-- versioning,
-- deletion semantics,
-- conflict policy,
-- retention requirements.
+- identity
+- lifecycle
+- authorization scope
+- versioning
+- deletion semantics
+- conflict behavior
+- retention
+- binary transfer requirements
+- security implications
 
-Synchronization must never silently overwrite user work.
+Synchronization must never silently discard user work.
 
-See `docs/SYNC.md`.
+Future federation between GlasHaus servers must be treated as communication between independent trust domains.
 
----
+Do not implement federation by weakening the local authorization boundary.
 
-## 14. API Design
-
-API endpoints must:
-
-- validate input,
-- validate authorization,
-- return documented responses,
-- use appropriate HTTP semantics,
-- avoid leaking internal implementation details,
-- delegate business behavior to application/domain layers.
-
-Endpoints must remain thin.
+Federated access must have explicit identity, trust, authorization, data-sharing, and revocation semantics before implementation.
 
 ---
 
-## 15. Error Handling
+## 13. Testing
 
-Errors must be handled deliberately.
+Every changed production behavior requires appropriate tests.
 
-Do not:
+Tests must verify behavior rather than merely increase coverage.
 
-- silently ignore exceptions,
-- expose stack traces,
-- expose secrets,
-- use broad exception handling without justification.
+Security-sensitive behavior requires explicit negative tests.
 
-User-facing responses must not expose internal implementation details.
+Authorization tests must cover denial as deliberately as they cover successful access.
 
-Logs may contain diagnostic information only when appropriate and safe.
+Tests should cover important combinations of:
 
----
+- identity
+- role
+- hierarchy
+- permission
+- grant/restriction
+- scope
+- resource
+- workspace
+- security classification
+- relevant contextual conditions
 
-## 16. AI-Assisted Development
+Age-dependent behavior must use explicit reference dates.
 
-When AI contributes code:
+Existing tests must not be weakened merely to make an implementation pass.
 
-1. inspect the existing implementation first,
-2. respect the current architecture,
-3. identify affected files,
-4. implement the complete requested behavior,
-5. add or update tests,
-6. update documentation where required,
-7. run quality checks,
-8. review the resulting diff.
+The project currently requires at least 90% total test coverage unless an explicit architecture or testing decision changes this requirement.
 
-AI must not invent:
-
-- dependencies,
-- APIs,
-- configuration options,
-- security guarantees,
-- database behavior.
-
-Dependencies and external APIs must be verified before use.
+A high coverage percentage does not replace meaningful tests.
 
 ---
 
-## 17. Change Discipline
+## 14. Code Quality
 
-Changes should be:
+Production code must be:
 
-- focused,
-- reviewable,
-- minimal,
-- reversible where practical.
+- complete
+- readable
+- maintainable
+- type-safe
+- testable
+- reasonably efficient
+- secure by default
 
-Do not mix unrelated refactoring into a feature change without justification.
+Prefer clear domain concepts over clever abstractions.
+
+Avoid unnecessary indirection.
+
+Avoid premature optimization.
+
+Avoid duplicated business rules where a single authoritative implementation is appropriate.
+
+Do not silently change unrelated behavior while implementing a feature.
 
 Do not rewrite working code merely for stylistic preference.
 
-Preserve existing behavior unless the change explicitly requires otherwise.
+When code structure must change because of an architectural decision, make that relationship explicit in the review.
 
 ---
 
-## 18. Architectural Decision Triggers
+## 15. Dependencies
 
-An explicit architecture review is required before introducing or substantially changing:
+Do not introduce a new dependency merely because it provides a convenient shortcut.
 
-- authentication,
-- authorization,
-- encryption,
-- key management,
-- synchronization,
-- document storage,
-- external integrations,
-- deployment topology,
-- data retention/deletion,
-- separate services,
-- irreversible data migrations.
+Before adding a dependency, consider:
+
+- whether the functionality is already available in the standard library or existing dependencies;
+- maintenance status;
+- security history;
+- licensing;
+- project compatibility;
+- long-term necessity.
+
+AI must not invent dependency names, versions, APIs, or behavior.
+
+Dependency additions should be explicitly visible in the change review.
+
+---
+
+## 16. AI Workflow
+
+When AI contributes code:
+
+1. inspect the current repository;
+2. inspect relevant documentation;
+3. inspect relevant tests and existing implementation;
+4. identify architectural or semantic conflicts;
+5. explain unresolved design questions;
+6. propose the intended design where required;
+7. obtain agreement for significant architectural decisions;
+8. implement the complete requested change;
+9. add or update tests;
+10. run Ruff;
+11. run formatting checks;
+12. run MyPy;
+13. run pytest;
+14. run `git diff --check`;
+15. review the resulting diff;
+16. verify that documentation and implementation remain consistent.
+
+AI must not invent:
+
+- dependencies
+- APIs
+- database behavior
+- security guarantees
+- cryptographic properties
+- external service behavior
+- undocumented architectural assumptions
+
+If the implementation contradicts the documented architecture, stop and resolve the contradiction rather than silently choosing one side.
+
+---
+
+## 17. Documentation Discipline
+
+Documentation is part of the implementation.
+
+When an architectural assumption changes, update the affected documentation before or together with the implementation.
+
+Do not leave obsolete architecture descriptions in the repository after implementing a replacement design.
+
+Design documents should clearly distinguish:
+
+- implemented behavior
+- approved design
+- planned behavior
+- explicitly deferred behavior
+
+Avoid duplicating detailed rules across multiple documents.
+
+Where a concept has one authoritative design document, other documents should reference that definition rather than creating competing versions.
+
+---
+
+## 18. Git and Change Discipline
+
+Prefer small, logically coherent, reviewable commits.
+
+Do not combine unrelated refactoring with feature work.
+
+Do not automatically commit or push changes on behalf of the user.
+
+Before a commit, review:
+
+git status --short
+git diff --check
+git diff --stat
+git diff
+
+For staged changes, review the staged diff as well:
+
+git diff --cached --check
+git diff --cached --stat
+git diff --cached
+
+Tests and static checks should pass before committing.
+
+When changes have independent architectural purposes, prefer separate commits.
+
+Do not use Git history as a substitute for maintaining the current documentation. Git provides history; the repository documentation must describe the current approved design.
 
 ---
 
 ## 19. Definition of Done
 
-An AI-assisted production change is complete only when:
+A change is complete only when all applicable requirements have been satisfied:
 
-- implementation is complete,
-- appropriate tests exist,
-- tests pass,
-- Ruff passes,
-- formatting passes,
-- MyPy passes,
-- documentation is updated where required,
-- security implications have been considered,
-- no secrets were introduced,
-- database migrations exist where required,
-- the working tree contains only intentional changes.
+implementation is complete
+tests exist
+relevant negative tests exist for security-sensitive behavior
+tests pass
+Ruff passes
+formatting passes
+MyPy passes
+documentation is updated
+security implications are considered
+no secrets were introduced
+required migrations exist
+git diff --check passes
+the resulting diff has been reviewed
+implementation and documentation do not contradict each other
 
-The applicable requirements in `docs/TESTING.md` are part of the Definition of Done.
+For architectural changes, the corresponding design documentation must be updated before the change is considered complete.
