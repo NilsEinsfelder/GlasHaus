@@ -1,389 +1,946 @@
-"""Unit tests for the GlasHaus identity and authorization model."""
-
-from uuid import uuid7
+from datetime import date
+from uuid import UUID
 
 import pytest
 from app.security.authorization import (
-    Action,
     AuthorizationDecision,
-    CustomerRole,
-    CustomerUserPrincipal,
+    ExternalRole,
+    FederationPeerPrincipal,
+    HierarchyLevel,
     InternalRole,
-    InternalUserPrincipal,
-    Project,
+    Permission,
+    PermissionGrant,
+    Resource,
+    ScopeType,
+    UserPrincipal,
+    UserType,
     Workspace,
     authorize,
+    calculate_age,
+    default_permissions,
 )
 
+PROJECT_A = UUID("00000000-0000-0000-0000-000000000001")
+PROJECT_B = UUID("00000000-0000-0000-0000-000000000002")
 
-def test_internal_user_can_read_assigned_project() -> None:
-    """An assigned internal user may read the project."""
-    project = Project(id=uuid7(), customer_id=uuid7())
-    user = InternalUserPrincipal(
-        id=uuid7(),
-        role=InternalRole.TECHNICIAN,
-        assigned_project_ids=frozenset({project.id}),
+CUSTOMER_A = UUID("10000000-0000-0000-0000-000000000001")
+CUSTOMER_B = UUID("10000000-0000-0000-0000-000000000002")
+
+LEAD_ID = UUID("20000000-0000-0000-0000-000000000001")
+TECHNICIAN_ID = UUID("20000000-0000-0000-0000-000000000002")
+APPRENTICE_ID = UUID("20000000-0000-0000-0000-000000000003")
+OFFICE_ID = UUID("20000000-0000-0000-0000-000000000004")
+
+CUSTOMER_USER_ID = UUID("30000000-0000-0000-0000-000000000001")
+TAX_ADVISOR_ID = UUID("30000000-0000-0000-0000-000000000002")
+FEDERATION_PEER_ID = UUID("40000000-0000-0000-0000-000000000001")
+
+
+def internal_user(
+    *,
+    user_id: UUID = TECHNICIAN_ID,
+    role: InternalRole = InternalRole.TECHNICIAN,
+    hierarchy: HierarchyLevel = HierarchyLevel.PROFESSIONAL,
+    birth_date: date = date(1990, 1, 1),
+) -> UserPrincipal:
+    return UserPrincipal(
+        id=user_id,
+        user_type=UserType.INTERNAL,
+        role=role,
+        hierarchy_level=hierarchy,
+        date_of_birth=birth_date,
     )
 
-    decision = authorize(user, Action.PROJECT_READ, project)
 
-    assert decision == AuthorizationDecision.ALLOW
-
-
-def test_internal_user_cannot_read_unassigned_project() -> None:
-    """An internal user must not access an unassigned project."""
-    assigned_project = Project(id=uuid7(), customer_id=uuid7())
-    requested_project = Project(id=uuid7(), customer_id=uuid7())
-
-    user = InternalUserPrincipal(
-        id=uuid7(),
-        role=InternalRole.TECHNICIAN,
-        assigned_project_ids=frozenset({assigned_project.id}),
+def customer_user() -> UserPrincipal:
+    return UserPrincipal(
+        id=CUSTOMER_USER_ID,
+        user_type=UserType.EXTERNAL,
+        role=ExternalRole.CUSTOMER,
+        customer_id=CUSTOMER_A,
     )
 
-    decision = authorize(user, Action.PROJECT_READ, requested_project)
 
-    assert decision == AuthorizationDecision.DENY
-
-
-def test_internal_user_has_no_address_only_fallback_for_unassigned_project() -> None:
-    """Unassigned projects must not have an emergency address exception."""
-    assigned_project = Project(id=uuid7(), customer_id=uuid7())
-    requested_project = Project(id=uuid7(), customer_id=uuid7())
-
-    user = InternalUserPrincipal(
-        id=uuid7(),
-        role=InternalRole.TECHNICIAN,
-        assigned_project_ids=frozenset({assigned_project.id}),
+def customer_project() -> Resource:
+    return Resource(
+        id=PROJECT_A,
+        project_id=PROJECT_A,
+        customer_id=CUSTOMER_A,
     )
 
-    decision = authorize(
-        user,
-        Action.PROJECT_ADDRESS_READ,
-        requested_project,
+
+def other_customer_project() -> Resource:
+    return Resource(
+        id=PROJECT_B,
+        project_id=PROJECT_B,
+        customer_id=CUSTOMER_B,
     )
 
-    assert decision == AuthorizationDecision.DENY
 
-
-def test_inactive_internal_user_is_denied() -> None:
-    """An inactive internal user must not access any project."""
-    project = Project(id=uuid7(), customer_id=uuid7())
-
-    user = InternalUserPrincipal(
-        id=uuid7(),
-        role=InternalRole.TECHNICIAN,
-        assigned_project_ids=frozenset({project.id}),
-        active=False,
+def customer_workspace() -> Resource:
+    return Resource(
+        id=PROJECT_A,
+        project_id=PROJECT_A,
+        customer_id=CUSTOMER_A,
+        workspace=Workspace.CUSTOMER,
     )
 
-    decision = authorize(user, Action.PROJECT_READ, project)
 
-    assert decision == AuthorizationDecision.DENY
-
-
-def test_internal_user_can_access_internal_workspace_of_assigned_project() -> None:
-    """Assigned internal users may access the internal workspace."""
-    project = Project(id=uuid7(), customer_id=uuid7())
-    user = InternalUserPrincipal(
-        id=uuid7(),
-        role=InternalRole.TECHNICIAN,
-        assigned_project_ids=frozenset({project.id}),
-    )
-
-    decision = authorize(
-        user,
-        Action.WORKSPACE_READ,
-        project,
+def internal_workspace() -> Resource:
+    return Resource(
+        id=PROJECT_A,
+        project_id=PROJECT_A,
+        customer_id=CUSTOMER_A,
         workspace=Workspace.INTERNAL,
     )
 
-    assert decision == AuthorizationDecision.ALLOW
+
+class TestAge:
+    def test_age_is_derived_from_birth_date(self) -> None:
+        assert (
+            calculate_age(
+                date(2000, 8, 25),
+                as_of=date(2026, 8, 24),
+            )
+            == 25
+        )
+
+    def test_age_changes_on_birthday(self) -> None:
+        assert (
+            calculate_age(
+                date(2000, 8, 25),
+                as_of=date(2026, 8, 25),
+            )
+            == 26
+        )
+
+    def test_user_does_not_store_age(self) -> None:
+        user = internal_user()
+
+        assert not hasattr(user, "age")
 
 
-def test_internal_user_can_access_customer_workspace_of_assigned_project() -> None:
-    """Assigned internal users may access the customer workspace."""
-    project = Project(id=uuid7(), customer_id=uuid7())
-    user = InternalUserPrincipal(
-        id=uuid7(),
-        role=InternalRole.PROJECT_MANAGER,
-        assigned_project_ids=frozenset({project.id}),
-    )
+class TestUserInvariants:
+    def test_internal_user_requires_hierarchy(self) -> None:
+        with pytest.raises(ValueError):
+            UserPrincipal(
+                id=TECHNICIAN_ID,
+                user_type=UserType.INTERNAL,
+                role=InternalRole.TECHNICIAN,
+            )
 
-    decision = authorize(
-        user,
-        Action.WORKSPACE_READ,
-        project,
-        workspace=Workspace.CUSTOMER,
-    )
+    def test_external_user_cannot_have_hierarchy(self) -> None:
+        with pytest.raises(ValueError):
+            UserPrincipal(
+                id=CUSTOMER_USER_ID,
+                user_type=UserType.EXTERNAL,
+                role=ExternalRole.CUSTOMER,
+                customer_id=CUSTOMER_A,
+                hierarchy_level=HierarchyLevel.LEAD,
+            )
 
-    assert decision == AuthorizationDecision.ALLOW
+    def test_customer_requires_customer_id(self) -> None:
+        with pytest.raises(ValueError):
+            UserPrincipal(
+                id=CUSTOMER_USER_ID,
+                user_type=UserType.EXTERNAL,
+                role=ExternalRole.CUSTOMER,
+            )
 
-
-def test_customer_user_can_read_own_project() -> None:
-    """A customer user may read a project belonging to their customer."""
-    customer_id = uuid7()
-    project = Project(id=uuid7(), customer_id=customer_id)
-
-    user = CustomerUserPrincipal(
-        id=uuid7(),
-        customer_id=customer_id,
-        role=CustomerRole.CUSTOMER,
-        accessible_project_ids=frozenset({project.id}),
-    )
-
-    decision = authorize(user, Action.PROJECT_READ, project)
-
-    assert decision == AuthorizationDecision.ALLOW
-
-
-def test_customer_user_cannot_read_project_of_another_customer() -> None:
-    """A customer user must not access another customer's project."""
-    own_customer_id = uuid7()
-    other_customer_id = uuid7()
-
-    own_project = Project(id=uuid7(), customer_id=own_customer_id)
-    other_project = Project(id=uuid7(), customer_id=other_customer_id)
-
-    user = CustomerUserPrincipal(
-        id=uuid7(),
-        customer_id=own_customer_id,
-        role=CustomerRole.CUSTOMER,
-        accessible_project_ids=frozenset({own_project.id}),
-    )
-
-    decision = authorize(user, Action.PROJECT_READ, other_project)
-
-    assert decision == AuthorizationDecision.DENY
+    def test_internal_user_cannot_have_customer_id(self) -> None:
+        with pytest.raises(ValueError):
+            UserPrincipal(
+                id=TECHNICIAN_ID,
+                user_type=UserType.INTERNAL,
+                role=InternalRole.TECHNICIAN,
+                hierarchy_level=HierarchyLevel.PROFESSIONAL,
+                customer_id=CUSTOMER_A,
+            )
 
 
-def test_customer_user_cannot_read_unassigned_customer_project() -> None:
-    """Customer membership alone must not grant access to every project."""
-    customer_id = uuid7()
+class TestRoleAndHierarchy:
+    def test_technician_role_has_technician_permissions(self) -> None:
+        user = internal_user()
 
-    assigned_project = Project(id=uuid7(), customer_id=customer_id)
-    unassigned_project = Project(id=uuid7(), customer_id=customer_id)
+        permissions = default_permissions(user)
 
-    user = CustomerUserPrincipal(
-        id=uuid7(),
-        customer_id=customer_id,
-        role=CustomerRole.CUSTOMER,
-        accessible_project_ids=frozenset({assigned_project.id}),
-    )
+        assert Permission.PROJECT_READ in permissions
+        assert Permission.PROJECT_ADDRESS_READ in permissions
+        assert Permission.DOCUMENT_READ in permissions
 
-    decision = authorize(user, Action.PROJECT_READ, unassigned_project)
+    def test_office_role_does_not_inherit_technician_address_permission(
+        self,
+    ) -> None:
+        user = internal_user(
+            user_id=OFFICE_ID,
+            role=InternalRole.OFFICE,
+        )
 
-    assert decision == AuthorizationDecision.DENY
+        assert Permission.PROJECT_ADDRESS_READ not in default_permissions(user)
 
+    def test_apprentice_has_no_professional_purchase_permission(self) -> None:
+        user = internal_user(
+            user_id=APPRENTICE_ID,
+            hierarchy=HierarchyLevel.APPRENTICE,
+        )
 
-def test_customer_user_can_read_customer_workspace() -> None:
-    """A customer user may access the customer workspace."""
-    customer_id = uuid7()
-    project = Project(id=uuid7(), customer_id=customer_id)
+        assert Permission.PURCHASE_CREATE not in default_permissions(user)
 
-    user = CustomerUserPrincipal(
-        id=uuid7(),
-        customer_id=customer_id,
-        role=CustomerRole.CUSTOMER,
-        accessible_project_ids=frozenset({project.id}),
-    )
+    def test_professional_gets_purchase_permission(self) -> None:
+        user = internal_user()
 
-    decision = authorize(
-        user,
-        Action.WORKSPACE_READ,
-        project,
-        workspace=Workspace.CUSTOMER,
-    )
+        assert Permission.PURCHASE_CREATE in default_permissions(user)
 
-    assert decision == AuthorizationDecision.ALLOW
+    def test_lead_gets_planning_permissions(self) -> None:
+        user = internal_user(
+            user_id=LEAD_ID,
+            hierarchy=HierarchyLevel.LEAD,
+        )
 
+        permissions = default_permissions(user)
 
-def test_customer_user_cannot_read_internal_workspace() -> None:
-    """Customer users must never access the internal workspace."""
-    customer_id = uuid7()
-    project = Project(id=uuid7(), customer_id=customer_id)
+        assert Permission.CALENDAR_AVAILABILITY_READ in permissions
+        assert Permission.CREW_ASSIGNMENT_REQUEST in permissions
 
-    user = CustomerUserPrincipal(
-        id=uuid7(),
-        customer_id=customer_id,
-        role=CustomerRole.CUSTOMER,
-        accessible_project_ids=frozenset({project.id}),
-    )
+    def test_hierarchy_does_not_replace_role(self) -> None:
+        user = internal_user(
+            user_id=OFFICE_ID,
+            role=InternalRole.OFFICE,
+            hierarchy=HierarchyLevel.LEAD,
+        )
 
-    decision = authorize(
-        user,
-        Action.WORKSPACE_READ,
-        project,
-        workspace=Workspace.INTERNAL,
-    )
+        permissions = default_permissions(user)
 
-    assert decision == AuthorizationDecision.DENY
+        assert Permission.PROJECT_READ in permissions
+        assert Permission.CALENDAR_AVAILABILITY_READ in permissions
+        assert Permission.PROJECT_ADDRESS_READ not in permissions
 
 
-def test_customer_user_can_download_customer_file() -> None:
-    """Customer users may download files from the customer workspace."""
-    customer_id = uuid7()
-    project = Project(id=uuid7(), customer_id=customer_id)
+class TestInternalProjectScope:
+    def test_internal_user_can_read_assigned_project(self) -> None:
+        decision = authorize(
+            internal_user(),
+            Permission.PROJECT_READ,
+            customer_project(),
+            assigned_project_ids=frozenset({PROJECT_A}),
+            as_of=date(2026, 8, 24),
+        )
 
-    user = CustomerUserPrincipal(
-        id=uuid7(),
-        customer_id=customer_id,
-        role=CustomerRole.CUSTOMER,
-        accessible_project_ids=frozenset({project.id}),
-    )
+        assert decision is AuthorizationDecision.ALLOW
 
-    decision = authorize(
-        user,
-        Action.CUSTOMER_FILE_DOWNLOAD,
-        project,
-        workspace=Workspace.CUSTOMER,
-    )
+    def test_internal_user_cannot_read_unassigned_project(self) -> None:
+        decision = authorize(
+            internal_user(),
+            Permission.PROJECT_READ,
+            other_customer_project(),
+            assigned_project_ids=frozenset({PROJECT_A}),
+            as_of=date(2026, 8, 24),
+        )
 
-    assert decision == AuthorizationDecision.ALLOW
+        assert decision is AuthorizationDecision.DENY
 
+    def test_explicit_grant_does_not_bypass_project_assignment(self) -> None:
+        grant = PermissionGrant(
+            principal_id=TECHNICIAN_ID,
+            permission=Permission.PURCHASE_CREATE,
+            scope_type=ScopeType.PROJECT,
+            scope_id=str(PROJECT_B),
+        )
 
-def test_customer_user_cannot_download_from_internal_workspace() -> None:
-    """Customer users cannot use customer permissions against internal data."""
-    customer_id = uuid7()
-    project = Project(id=uuid7(), customer_id=customer_id)
+        decision = authorize(
+            internal_user(),
+            Permission.PURCHASE_CREATE,
+            other_customer_project(),
+            assigned_project_ids=frozenset({PROJECT_A}),
+            grants=(grant,),
+            as_of=date(2026, 8, 24),
+        )
 
-    user = CustomerUserPrincipal(
-        id=uuid7(),
-        customer_id=customer_id,
-        role=CustomerRole.CUSTOMER,
-        accessible_project_ids=frozenset({project.id}),
-    )
-
-    decision = authorize(
-        user,
-        Action.CUSTOMER_FILE_DOWNLOAD,
-        project,
-        workspace=Workspace.INTERNAL,
-    )
-
-    assert decision == AuthorizationDecision.DENY
-
-
-def test_customer_user_cannot_use_internal_document_permission() -> None:
-    """Customer roles must not inherit internal document permissions."""
-    customer_id = uuid7()
-    project = Project(id=uuid7(), customer_id=customer_id)
-
-    user = CustomerUserPrincipal(
-        id=uuid7(),
-        customer_id=customer_id,
-        role=CustomerRole.CUSTOMER,
-        accessible_project_ids=frozenset({project.id}),
-    )
-
-    decision = authorize(
-        user,
-        Action.DOCUMENT_UPDATE,
-        project,
-        workspace=Workspace.CUSTOMER,
-    )
-
-    assert decision == AuthorizationDecision.DENY
+        assert decision is AuthorizationDecision.DENY
 
 
-def test_customer_manager_can_create_customer_files() -> None:
-    """A customer manager may create content in the customer workspace."""
-    customer_id = uuid7()
-    project = Project(id=uuid7(), customer_id=customer_id)
+class TestExplicitGrants:
+    def test_project_grant_can_add_permission(self) -> None:
+        user = internal_user(
+            user_id=APPRENTICE_ID,
+            hierarchy=HierarchyLevel.APPRENTICE,
+        )
 
-    user = CustomerUserPrincipal(
-        id=uuid7(),
-        customer_id=customer_id,
-        role=CustomerRole.CUSTOMER_MANAGER,
-        accessible_project_ids=frozenset({project.id}),
-    )
+        grant = PermissionGrant(
+            principal_id=APPRENTICE_ID,
+            permission=Permission.PURCHASE_CREATE,
+            scope_type=ScopeType.PROJECT,
+            scope_id=str(PROJECT_A),
+        )
 
-    decision = authorize(
-        user,
-        Action.CUSTOMER_FILE_CREATE,
-        project,
-        workspace=Workspace.CUSTOMER,
-    )
+        decision = authorize(
+            user,
+            Permission.PURCHASE_CREATE,
+            customer_project(),
+            assigned_project_ids=frozenset({PROJECT_A}),
+            grants=(grant,),
+            as_of=date(2026, 8, 24),
+        )
 
-    assert decision == AuthorizationDecision.ALLOW
+        assert decision is AuthorizationDecision.ALLOW
+
+    def test_project_grant_does_not_apply_to_other_project(self) -> None:
+        user = internal_user(
+            user_id=APPRENTICE_ID,
+            hierarchy=HierarchyLevel.APPRENTICE,
+        )
+
+        grant = PermissionGrant(
+            principal_id=APPRENTICE_ID,
+            permission=Permission.PURCHASE_CREATE,
+            scope_type=ScopeType.PROJECT,
+            scope_id=str(PROJECT_A),
+        )
+
+        decision = authorize(
+            user,
+            Permission.PURCHASE_CREATE,
+            other_customer_project(),
+            assigned_project_ids=frozenset({PROJECT_A, PROJECT_B}),
+            grants=(grant,),
+            as_of=date(2026, 8, 24),
+        )
+
+        assert decision is AuthorizationDecision.DENY
+
+    def test_global_grant_applies_globally(self) -> None:
+        user = internal_user(
+            user_id=APPRENTICE_ID,
+            hierarchy=HierarchyLevel.APPRENTICE,
+        )
+
+        grant = PermissionGrant(
+            principal_id=APPRENTICE_ID,
+            permission=Permission.PURCHASE_CREATE,
+            scope_type=ScopeType.GLOBAL,
+            scope_id="*",
+        )
+
+        decision = authorize(
+            user,
+            Permission.PURCHASE_CREATE,
+            customer_project(),
+            assigned_project_ids=frozenset({PROJECT_A}),
+            grants=(grant,),
+            as_of=date(2026, 8, 24),
+        )
+
+        assert decision is AuthorizationDecision.ALLOW
+
+    def test_inactive_grant_is_ignored(self) -> None:
+        user = internal_user(
+            user_id=APPRENTICE_ID,
+            hierarchy=HierarchyLevel.APPRENTICE,
+        )
+
+        grant = PermissionGrant(
+            principal_id=APPRENTICE_ID,
+            permission=Permission.PURCHASE_CREATE,
+            scope_type=ScopeType.PROJECT,
+            scope_id=str(PROJECT_A),
+            active=False,
+        )
+
+        decision = authorize(
+            user,
+            Permission.PURCHASE_CREATE,
+            customer_project(),
+            assigned_project_ids=frozenset({PROJECT_A}),
+            grants=(grant,),
+            as_of=date(2026, 8, 24),
+        )
+
+        assert decision is AuthorizationDecision.DENY
 
 
-def test_inactive_customer_user_is_denied() -> None:
-    """An inactive customer user must not access any project."""
-    customer_id = uuid7()
-    project = Project(id=uuid7(), customer_id=customer_id)
+class TestCustomerWorkspace:
+    def test_customer_can_read_own_project(self) -> None:
+        decision = authorize(
+            customer_user(),
+            Permission.PROJECT_READ,
+            customer_workspace(),
+            as_of=date(2026, 8, 24),
+        )
 
-    user = CustomerUserPrincipal(
-        id=uuid7(),
-        customer_id=customer_id,
-        role=CustomerRole.CUSTOMER,
-        accessible_project_ids=frozenset({project.id}),
-        active=False,
-    )
+        assert decision is AuthorizationDecision.ALLOW
 
-    decision = authorize(user, Action.PROJECT_READ, project)
+    def test_customer_cannot_access_other_customer_project(self) -> None:
+        resource = Resource(
+            id=PROJECT_B,
+            project_id=PROJECT_B,
+            customer_id=CUSTOMER_B,
+            workspace=Workspace.CUSTOMER,
+        )
 
-    assert decision == AuthorizationDecision.DENY
+        decision = authorize(
+            customer_user(),
+            Permission.PROJECT_READ,
+            resource,
+            as_of=date(2026, 8, 24),
+        )
+
+        assert decision is AuthorizationDecision.DENY
+
+    def test_customer_can_create_customer_file(self) -> None:
+        decision = authorize(
+            customer_user(),
+            Permission.CUSTOMER_FILE_CREATE,
+            customer_workspace(),
+            as_of=date(2026, 8, 24),
+        )
+
+        assert decision is AuthorizationDecision.ALLOW
+
+    def test_customer_cannot_access_internal_workspace(self) -> None:
+        decision = authorize(
+            customer_user(),
+            Permission.PROJECT_READ,
+            internal_workspace(),
+            as_of=date(2026, 8, 24),
+        )
+
+        assert decision is AuthorizationDecision.DENY
 
 
-@pytest.mark.parametrize(
-    "principal",
-    [
-        InternalUserPrincipal(
-            id=uuid7(),
+class TestCalendarVisibility:
+    def test_lead_can_see_team_availability(self) -> None:
+        user = internal_user(
+            user_id=LEAD_ID,
+            hierarchy=HierarchyLevel.LEAD,
+        )
+
+        resource = Resource(
+            id=TECHNICIAN_ID,
+            owner_user_id=TECHNICIAN_ID,
+        )
+
+        decision = authorize(
+            user,
+            Permission.CALENDAR_AVAILABILITY_READ,
+            resource,
+            team_user_ids=frozenset({TECHNICIAN_ID, APPRENTICE_ID}),
+            as_of=date(2026, 8, 24),
+        )
+
+        assert decision is AuthorizationDecision.ALLOW
+
+    def test_lead_can_see_apprentice_availability(self) -> None:
+        user = internal_user(
+            user_id=LEAD_ID,
+            hierarchy=HierarchyLevel.LEAD,
+        )
+
+        resource = Resource(
+            id=APPRENTICE_ID,
+            owner_user_id=APPRENTICE_ID,
+        )
+
+        decision = authorize(
+            user,
+            Permission.CALENDAR_AVAILABILITY_READ,
+            resource,
+            team_user_ids=frozenset({TECHNICIAN_ID, APPRENTICE_ID}),
+            as_of=date(2026, 8, 24),
+        )
+
+        assert decision is AuthorizationDecision.ALLOW
+
+    def test_lead_cannot_see_unrelated_user_availability(self) -> None:
+        user = internal_user(
+            user_id=LEAD_ID,
+            hierarchy=HierarchyLevel.LEAD,
+        )
+
+        resource = Resource(
+            id=OFFICE_ID,
+            owner_user_id=OFFICE_ID,
+        )
+
+        decision = authorize(
+            user,
+            Permission.CALENDAR_AVAILABILITY_READ,
+            resource,
+            team_user_ids=frozenset({TECHNICIAN_ID}),
+            as_of=date(2026, 8, 24),
+        )
+
+        assert decision is AuthorizationDecision.DENY
+
+    def test_lead_cannot_see_event_details(self) -> None:
+        user = internal_user(
+            user_id=LEAD_ID,
+            hierarchy=HierarchyLevel.LEAD,
+        )
+
+        resource = Resource(
+            id=TECHNICIAN_ID,
+            owner_user_id=TECHNICIAN_ID,
+        )
+
+        decision = authorize(
+            user,
+            Permission.CALENDAR_EVENT_READ,
+            resource,
+            team_user_ids=frozenset({TECHNICIAN_ID}),
+            as_of=date(2026, 8, 24),
+        )
+
+        assert decision is AuthorizationDecision.DENY
+
+    def test_lead_cannot_see_event_location(self) -> None:
+        user = internal_user(
+            user_id=LEAD_ID,
+            hierarchy=HierarchyLevel.LEAD,
+        )
+
+        resource = Resource(
+            id=TECHNICIAN_ID,
+            owner_user_id=TECHNICIAN_ID,
+        )
+
+        decision = authorize(
+            user,
+            Permission.CALENDAR_EVENT_LOCATION_READ,
+            resource,
+            team_user_ids=frozenset({TECHNICIAN_ID}),
+            as_of=date(2026, 8, 24),
+        )
+
+        assert decision is AuthorizationDecision.DENY
+
+    def test_lead_can_create_assignment_request(self) -> None:
+        user = internal_user(
+            user_id=LEAD_ID,
+            hierarchy=HierarchyLevel.LEAD,
+        )
+
+        decision = authorize(
+            user,
+            Permission.CREW_ASSIGNMENT_REQUEST,
+            customer_project(),
+            assigned_project_ids=frozenset({PROJECT_A}),
+            as_of=date(2026, 8, 24),
+        )
+
+        assert decision is AuthorizationDecision.ALLOW
+
+
+class TestDocumentSigningPolicy:
+    def test_minor_cannot_sign_even_with_explicit_grant(self) -> None:
+        user = internal_user(
+            user_id=APPRENTICE_ID,
+            hierarchy=HierarchyLevel.APPRENTICE,
+            birth_date=date(2008, 8, 25),
+        )
+
+        grant = PermissionGrant(
+            principal_id=APPRENTICE_ID,
+            permission=Permission.DOCUMENT_SIGN,
+            scope_type=ScopeType.PROJECT,
+            scope_id=str(PROJECT_A),
+        )
+
+        decision = authorize(
+            user,
+            Permission.DOCUMENT_SIGN,
+            customer_project(),
+            assigned_project_ids=frozenset({PROJECT_A}),
+            grants=(grant,),
+            as_of=date(2026, 8, 24),
+        )
+
+        assert decision is AuthorizationDecision.DENY
+
+    def test_user_can_sign_after_eighteenth_birthday_with_grant(self) -> None:
+        user = internal_user(
+            user_id=TECHNICIAN_ID,
+            birth_date=date(2008, 8, 25),
+        )
+
+        grant = PermissionGrant(
+            principal_id=TECHNICIAN_ID,
+            permission=Permission.DOCUMENT_SIGN,
+            scope_type=ScopeType.PROJECT,
+            scope_id=str(PROJECT_A),
+        )
+
+        before_birthday = authorize(
+            user,
+            Permission.DOCUMENT_SIGN,
+            customer_project(),
+            assigned_project_ids=frozenset({PROJECT_A}),
+            grants=(grant,),
+            as_of=date(2026, 8, 24),
+        )
+
+        on_birthday = authorize(
+            user,
+            Permission.DOCUMENT_SIGN,
+            customer_project(),
+            assigned_project_ids=frozenset({PROJECT_A}),
+            grants=(grant,),
+            as_of=date(2026, 8, 25),
+        )
+
+        assert before_birthday is AuthorizationDecision.DENY
+        assert on_birthday is AuthorizationDecision.ALLOW
+
+    def test_adult_without_signing_grant_is_denied(self) -> None:
+        user = internal_user(
+            birth_date=date(1990, 1, 1),
+        )
+
+        decision = authorize(
+            user,
+            Permission.DOCUMENT_SIGN,
+            customer_project(),
+            assigned_project_ids=frozenset({PROJECT_A}),
+            as_of=date(2026, 8, 24),
+        )
+
+        assert decision is AuthorizationDecision.DENY
+
+
+class TestTaxAdvisor:
+    def test_tax_advisor_requires_explicit_tax_desk_grant(self) -> None:
+        user = UserPrincipal(
+            id=TAX_ADVISOR_ID,
+            user_type=UserType.EXTERNAL,
+            role=ExternalRole.TAX_ADVISOR,
+        )
+
+        resource = Resource(
+            id=TAX_ADVISOR_ID,
+            workspace=Workspace.TAX_DESK,
+        )
+
+        grant = PermissionGrant(
+            principal_id=TAX_ADVISOR_ID,
+            permission=Permission.TAX_DESK_READ,
+            scope_type=ScopeType.WORKSPACE,
+            scope_id=Workspace.TAX_DESK.value,
+        )
+
+        decision = authorize(
+            user,
+            Permission.TAX_DESK_READ,
+            resource,
+            grants=(grant,),
+            as_of=date(2026, 8, 24),
+        )
+
+        assert decision is AuthorizationDecision.ALLOW
+
+    def test_tax_advisor_without_grant_is_denied(self) -> None:
+        user = UserPrincipal(
+            id=TAX_ADVISOR_ID,
+            user_type=UserType.EXTERNAL,
+            role=ExternalRole.TAX_ADVISOR,
+        )
+
+        resource = Resource(
+            id=TAX_ADVISOR_ID,
+            workspace=Workspace.TAX_DESK,
+        )
+
+        decision = authorize(
+            user,
+            Permission.TAX_DESK_READ,
+            resource,
+            as_of=date(2026, 8, 24),
+        )
+
+        assert decision is AuthorizationDecision.DENY
+
+
+class TestFederation:
+    def test_federation_peer_requires_explicit_project_grant(self) -> None:
+        peer = FederationPeerPrincipal(
+            id=FEDERATION_PEER_ID,
+        )
+
+        resource = customer_project()
+
+        grant = PermissionGrant(
+            principal_id=FEDERATION_PEER_ID,
+            permission=Permission.FEDERATION_PROJECT_READ,
+            scope_type=ScopeType.PROJECT,
+            scope_id=str(PROJECT_A),
+        )
+
+        decision = authorize(
+            peer,
+            Permission.FEDERATION_PROJECT_READ,
+            resource,
+            grants=(grant,),
+            as_of=date(2026, 8, 24),
+        )
+
+        assert decision is AuthorizationDecision.ALLOW
+
+    def test_federation_peer_cannot_access_ungranted_project(self) -> None:
+        peer = FederationPeerPrincipal(
+            id=FEDERATION_PEER_ID,
+        )
+
+        resource = other_customer_project()
+
+        grant = PermissionGrant(
+            principal_id=FEDERATION_PEER_ID,
+            permission=Permission.FEDERATION_PROJECT_READ,
+            scope_type=ScopeType.PROJECT,
+            scope_id=str(PROJECT_A),
+        )
+
+        decision = authorize(
+            peer,
+            Permission.FEDERATION_PROJECT_READ,
+            resource,
+            grants=(grant,),
+            as_of=date(2026, 8, 24),
+        )
+
+        assert decision is AuthorizationDecision.DENY
+
+
+class TestDefaultDeny:
+    def test_unrelated_permission_is_denied(self) -> None:
+        user = internal_user()
+
+        resource = Resource(
+            id=PROJECT_A,
+            workspace=Workspace.TAX_DESK,
+        )
+
+        decision = authorize(
+            user,
+            Permission.TAX_DESK_READ,
+            resource,
+            as_of=date(2026, 8, 24),
+        )
+
+        assert decision is AuthorizationDecision.DENY
+
+    def test_inactive_user_is_denied(self) -> None:
+        user = UserPrincipal(
+            id=TECHNICIAN_ID,
+            user_type=UserType.INTERNAL,
             role=InternalRole.TECHNICIAN,
-            assigned_project_ids=frozenset(),
-        ),
-        CustomerUserPrincipal(
-            id=uuid7(),
-            customer_id=uuid7(),
-            role=CustomerRole.CUSTOMER,
-            accessible_project_ids=frozenset(),
-        ),
-    ],
-)
-def test_unassigned_project_access_is_denied(
-    principal: InternalUserPrincipal | CustomerUserPrincipal,
-) -> None:
-    """No local principal may bypass project assignment."""
-    project = Project(id=uuid7(), customer_id=uuid7())
+            hierarchy_level=HierarchyLevel.PROFESSIONAL,
+            active=False,
+        )
 
-    decision = authorize(
-        principal,
-        Action.PROJECT_READ,
-        project,
-    )
+        decision = authorize(
+            user,
+            Permission.PROJECT_READ,
+            customer_project(),
+            assigned_project_ids=frozenset({PROJECT_A}),
+            as_of=date(2026, 8, 24),
+        )
 
-    assert decision == AuthorizationDecision.DENY
+        assert decision is AuthorizationDecision.DENY
 
 
-def test_customer_user_cannot_access_project_only_by_knowing_project_id() -> None:
-    """Knowledge of a project ID must never grant customer access."""
-    customer_id = uuid7()
-    project = Project(id=uuid7(), customer_id=customer_id)
+class TestAuthorizationEdgeCases:
+    def test_internal_user_with_invalid_role_is_rejected(self) -> None:
+        with pytest.raises(ValueError):
+            UserPrincipal(
+                id=TECHNICIAN_ID,
+                user_type=UserType.INTERNAL,
+                role=ExternalRole.CUSTOMER,
+                hierarchy_level=HierarchyLevel.PROFESSIONAL,
+            )
 
-    user = CustomerUserPrincipal(
-        id=uuid7(),
-        customer_id=customer_id,
-        role=CustomerRole.CUSTOMER,
-        accessible_project_ids=frozenset(),
-    )
+    def test_external_user_with_invalid_role_is_rejected(self) -> None:
+        with pytest.raises(ValueError):
+            UserPrincipal(
+                id=CUSTOMER_USER_ID,
+                user_type=UserType.EXTERNAL,
+                role=InternalRole.TECHNICIAN,
+            )
 
-    decision = authorize(user, Action.PROJECT_READ, project)
+    def test_external_customer_without_customer_id_is_rejected(self) -> None:
+        with pytest.raises(ValueError):
+            UserPrincipal(
+                id=CUSTOMER_USER_ID,
+                user_type=UserType.EXTERNAL,
+                role=ExternalRole.CUSTOMER,
+                customer_id=None,
+            )
 
-    assert decision == AuthorizationDecision.DENY
+    def test_inactive_grant_is_not_authorized(self) -> None:
+        user = internal_user(
+            user_id=APPRENTICE_ID,
+            hierarchy=HierarchyLevel.APPRENTICE,
+        )
 
+        grant = PermissionGrant(
+            principal_id=APPRENTICE_ID,
+            permission=Permission.PURCHASE_CREATE,
+            scope_type=ScopeType.GLOBAL,
+            scope_id="*",
+            active=False,
+        )
 
-def test_internal_user_cannot_access_project_only_by_knowing_project_id() -> None:
-    """Knowledge of a project ID must never bypass assignment."""
-    project = Project(id=uuid7(), customer_id=uuid7())
+        decision = authorize(
+            user,
+            Permission.PURCHASE_CREATE,
+            customer_project(),
+            assigned_project_ids=frozenset({PROJECT_A}),
+            grants=(grant,),
+            as_of=date(2026, 8, 24),
+        )
 
-    user = InternalUserPrincipal(
-        id=uuid7(),
-        role=InternalRole.TECHNICIAN,
-        assigned_project_ids=frozenset(),
-    )
+        assert decision is AuthorizationDecision.DENY
 
-    decision = authorize(user, Action.PROJECT_READ, project)
+    def test_project_grant_requires_project_resource(self) -> None:
+        user = internal_user(
+            user_id=APPRENTICE_ID,
+            hierarchy=HierarchyLevel.APPRENTICE,
+        )
 
-    assert decision == AuthorizationDecision.DENY
+        grant = PermissionGrant(
+            principal_id=APPRENTICE_ID,
+            permission=Permission.PURCHASE_CREATE,
+            scope_type=ScopeType.PROJECT,
+            scope_id=str(PROJECT_A),
+        )
+
+        resource = Resource(id=PROJECT_A)
+
+        decision = authorize(
+            user,
+            Permission.PURCHASE_CREATE,
+            resource,
+            grants=(grant,),
+            as_of=date(2026, 8, 24),
+        )
+
+        assert decision is AuthorizationDecision.DENY
+
+    def test_workspace_grant_requires_matching_workspace(self) -> None:
+        user = UserPrincipal(
+            id=TAX_ADVISOR_ID,
+            user_type=UserType.EXTERNAL,
+            role=ExternalRole.TAX_ADVISOR,
+        )
+
+        grant = PermissionGrant(
+            principal_id=TAX_ADVISOR_ID,
+            permission=Permission.TAX_DESK_READ,
+            scope_type=ScopeType.WORKSPACE,
+            scope_id=Workspace.TAX_DESK.value,
+        )
+
+        resource = Resource(
+            id=TAX_ADVISOR_ID,
+            workspace=Workspace.CUSTOMER,
+        )
+
+        decision = authorize(
+            user,
+            Permission.TAX_DESK_READ,
+            resource,
+            grants=(grant,),
+            as_of=date(2026, 8, 24),
+        )
+
+        assert decision is AuthorizationDecision.DENY
+
+    def test_user_scope_grant_requires_matching_owner(self) -> None:
+        user = internal_user(
+            user_id=APPRENTICE_ID,
+            hierarchy=HierarchyLevel.APPRENTICE,
+        )
+
+        grant = PermissionGrant(
+            principal_id=APPRENTICE_ID,
+            permission=Permission.PURCHASE_CREATE,
+            scope_type=ScopeType.USER,
+            scope_id=str(APPRENTICE_ID),
+        )
+
+        resource = Resource(
+            id=TECHNICIAN_ID,
+            owner_user_id=TECHNICIAN_ID,
+        )
+
+        decision = authorize(
+            user,
+            Permission.PURCHASE_CREATE,
+            resource,
+            grants=(grant,),
+            as_of=date(2026, 8, 24),
+        )
+
+        assert decision is AuthorizationDecision.DENY
+
+    def test_customer_resource_without_project_is_denied(self) -> None:
+        user = customer_user()
+
+        resource = Resource(
+            id=CUSTOMER_A,
+            customer_id=CUSTOMER_A,
+            workspace=Workspace.CUSTOMER,
+        )
+
+        decision = authorize(
+            user,
+            Permission.PROJECT_READ,
+            resource,
+            as_of=date(2026, 8, 24),
+        )
+
+        assert decision is AuthorizationDecision.DENY
+
+    def test_lead_without_calendar_owner_is_denied(self) -> None:
+        user = internal_user(
+            user_id=LEAD_ID,
+            hierarchy=HierarchyLevel.LEAD,
+        )
+
+        resource = Resource(id=PROJECT_A)
+
+        decision = authorize(
+            user,
+            Permission.CALENDAR_AVAILABILITY_READ,
+            resource,
+            team_user_ids=frozenset({TECHNICIAN_ID}),
+            as_of=date(2026, 8, 24),
+        )
+
+        assert decision is AuthorizationDecision.DENY
+
+    def test_tax_desk_permission_requires_tax_desk_resource(self) -> None:
+        user = UserPrincipal(
+            id=TAX_ADVISOR_ID,
+            user_type=UserType.EXTERNAL,
+            role=ExternalRole.TAX_ADVISOR,
+        )
+
+        grant = PermissionGrant(
+            principal_id=TAX_ADVISOR_ID,
+            permission=Permission.TAX_DESK_READ,
+            scope_type=ScopeType.GLOBAL,
+            scope_id="*",
+        )
+
+        resource = Resource(
+            id=TAX_ADVISOR_ID,
+            workspace=Workspace.CUSTOMER,
+        )
+
+        decision = authorize(
+            user,
+            Permission.TAX_DESK_READ,
+            resource,
+            grants=(grant,),
+            as_of=date(2026, 8, 24),
+        )
+
+        assert decision is AuthorizationDecision.DENY

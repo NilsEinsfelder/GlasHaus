@@ -1,6 +1,23 @@
-"""Authorization policy for the GlasHaus backend."""
+"""Authorization policy for the GlasHaus backend.
+
+The authorization model combines:
+
+- user type;
+- exactly one role per user;
+- internal hierarchy level;
+- role-based default permissions;
+- hierarchy-based default permissions;
+- explicit scoped permission grants;
+- project/customer relationships;
+- information visibility levels;
+- policy constraints such as minimum age.
+
+Authentication and cryptographic identity verification are deliberately outside
+this module.
+"""
 
 from dataclasses import dataclass
+from datetime import date
 from enum import StrEnum
 from uuid import UUID
 
@@ -12,260 +29,560 @@ class AuthorizationDecision(StrEnum):
     DENY = "deny"
 
 
-class PrincipalType(StrEnum):
-    """Types of principals supported by GlasHaus."""
+class UserType(StrEnum):
+    """High-level user types supported by GlasHaus."""
 
-    INTERNAL_USER = "internal_user"
-    CUSTOMER_USER = "customer_user"
-    FEDERATION_PEER = "federation_peer"
+    INTERNAL = "internal"
+    EXTERNAL = "external"
 
 
 class InternalRole(StrEnum):
-    """Roles available to internal users."""
+    """Concrete roles for internal users."""
 
-    ADMIN = "admin"
-    OFFICE = "office"
-    PROJECT_MANAGER = "project_manager"
     TECHNICIAN = "technician"
-    VIEWER = "viewer"
+    OFFICE = "office"
 
 
-class CustomerRole(StrEnum):
-    """Roles available to customer users."""
+class ExternalRole(StrEnum):
+    """Concrete roles for external users."""
 
     CUSTOMER = "customer"
-    CUSTOMER_MANAGER = "customer_manager"
+    TAX_ADVISOR = "tax_advisor"
+
+
+class HierarchyLevel(StrEnum):
+    """Employment hierarchy for internal users."""
+
+    APPRENTICE = "apprentice"
+    PROFESSIONAL = "professional"
+    LEAD = "lead"
 
 
 class Workspace(StrEnum):
-    """Project workspaces."""
+    """Logical GlasHaus workspaces."""
 
     INTERNAL = "internal"
     CUSTOMER = "customer"
+    TAX_DESK = "tax_desk"
 
 
-class Action(StrEnum):
-    """Actions that can be authorized by the policy."""
+class Permission(StrEnum):
+    """Actions that may be authorized."""
 
     PROJECT_READ = "project:read"
     PROJECT_ADDRESS_READ = "project:address:read"
-
-    WORKSPACE_READ = "workspace:read"
-
     DOCUMENT_READ = "document:read"
-    DOCUMENT_UPDATE = "document:update"
+    DOCUMENT_SIGN = "document:sign"
 
-    CUSTOMER_FILE_DOWNLOAD = "customer:file:download"
+    PURCHASE_CREATE = "purchase:create"
+
+    CALENDAR_AVAILABILITY_READ = "calendar:availability:read"
+    CALENDAR_EVENT_READ = "calendar:event:read"
+    CALENDAR_EVENT_LOCATION_READ = "calendar:event:location:read"
+
+    CREW_ASSIGNMENT_REQUEST = "crew:assignment:request"
+
+    CUSTOMER_FILE_READ = "customer:file:read"
     CUSTOMER_FILE_CREATE = "customer:file:create"
 
+    TAX_DESK_READ = "tax_desk:read"
+
+    FEDERATION_PROJECT_READ = "federation:project:read"
+
+
+class ScopeType(StrEnum):
+    """Scope types for explicit permission grants."""
+
+    GLOBAL = "global"
+    PROJECT = "project"
+    WORKSPACE = "workspace"
+    USER = "user"
+
+
+class VisibilityLevel(StrEnum):
+    """Information visibility levels for resources."""
+
+    AVAILABILITY = "availability"
+    EVENT = "event"
+    LOCATION = "location"
+
 
 @dataclass(frozen=True, slots=True)
-class Project:
-    """Minimal project representation required by authorization."""
+class UserPrincipal:
+    """Authenticated GlasHaus user.
+
+    A user has exactly one role. Internal users additionally have one
+    hierarchy level derived from their employment relationship.
+    """
 
     id: UUID
-    customer_id: UUID
-
-
-@dataclass(frozen=True, slots=True)
-class InternalUserPrincipal:
-    """Authenticated internal GlasHaus user."""
-
-    id: UUID
-    role: InternalRole
-    assigned_project_ids: frozenset[UUID]
+    user_type: UserType
+    role: InternalRole | ExternalRole
+    hierarchy_level: HierarchyLevel | None = None
+    customer_id: UUID | None = None
+    date_of_birth: date | None = None
     active: bool = True
 
-    @property
-    def principal_type(self) -> PrincipalType:
-        """Return the principal type."""
-        return PrincipalType.INTERNAL_USER
+    def __post_init__(self) -> None:
+        """Validate identity invariants."""
 
+        if self.user_type is UserType.INTERNAL:
+            if not isinstance(self.role, InternalRole):
+                raise ValueError("Internal users require an InternalRole.")
 
-@dataclass(frozen=True, slots=True)
-class CustomerUserPrincipal:
-    """Authenticated external customer user."""
+            if self.hierarchy_level is None:
+                raise ValueError("Internal users require a hierarchy level.")
 
-    id: UUID
-    customer_id: UUID
-    role: CustomerRole
-    accessible_project_ids: frozenset[UUID]
-    active: bool = True
+            if self.customer_id is not None:
+                raise ValueError("Internal users cannot have a customer_id.")
 
-    @property
-    def principal_type(self) -> PrincipalType:
-        """Return the principal type."""
-        return PrincipalType.CUSTOMER_USER
+        elif self.user_type is UserType.EXTERNAL:
+            if not isinstance(self.role, ExternalRole):
+                raise ValueError("External users require an ExternalRole.")
+
+            if self.hierarchy_level is not None:
+                raise ValueError("External users cannot have a hierarchy level.")
+
+        else:
+            raise ValueError("Unsupported user type.")
+
+        if self.role is ExternalRole.CUSTOMER and self.customer_id is None:
+            raise ValueError("Customer users require a customer_id.")
 
 
 @dataclass(frozen=True, slots=True)
 class FederationPeerPrincipal:
-    """Future authenticated GlasHaus federation peer."""
+    """Authenticated peer GlasHaus server.
+
+    Federation peers are intentionally separate from human users. Their
+    permissions must always be explicitly granted by federation policy.
+    """
 
     id: UUID
     active: bool = True
 
-    @property
-    def principal_type(self) -> PrincipalType:
-        """Return the principal type."""
-        return PrincipalType.FEDERATION_PEER
+
+Principal = UserPrincipal | FederationPeerPrincipal
 
 
-Principal = InternalUserPrincipal | CustomerUserPrincipal | FederationPeerPrincipal
+@dataclass(frozen=True, slots=True)
+class Project:
+    """Project relationship information needed for authorization."""
+
+    id: UUID
+    customer_id: UUID
 
 
-_INTERNAL_PERMISSIONS: dict[InternalRole, frozenset[Action]] = {
-    InternalRole.ADMIN: frozenset(
+@dataclass(frozen=True, slots=True)
+class Resource:
+    """Minimal resource information needed by authorization.
+
+    Not every resource belongs to a project. Calendar and workspace resources
+    may instead be associated with a user or workspace.
+    """
+
+    id: UUID
+    project_id: UUID | None = None
+    customer_id: UUID | None = None
+    workspace: Workspace | None = None
+    owner_user_id: UUID | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class PermissionGrant:
+    """Explicit permission granted to one principal within a scope."""
+
+    principal_id: UUID
+    permission: Permission
+    scope_type: ScopeType
+    scope_id: str
+    active: bool = True
+
+
+_ROLE_PERMISSIONS: dict[
+    InternalRole | ExternalRole,
+    frozenset[Permission],
+] = {
+    InternalRole.TECHNICIAN: frozenset(
         {
-            Action.PROJECT_READ,
-            Action.PROJECT_ADDRESS_READ,
-            Action.WORKSPACE_READ,
-            Action.DOCUMENT_READ,
-            Action.DOCUMENT_UPDATE,
+            Permission.PROJECT_READ,
+            Permission.PROJECT_ADDRESS_READ,
+            Permission.DOCUMENT_READ,
         }
     ),
     InternalRole.OFFICE: frozenset(
         {
-            Action.PROJECT_READ,
-            Action.PROJECT_ADDRESS_READ,
-            Action.WORKSPACE_READ,
-            Action.DOCUMENT_READ,
-            Action.DOCUMENT_UPDATE,
+            Permission.PROJECT_READ,
+            Permission.DOCUMENT_READ,
         }
     ),
-    InternalRole.PROJECT_MANAGER: frozenset(
+    ExternalRole.CUSTOMER: frozenset(
         {
-            Action.PROJECT_READ,
-            Action.PROJECT_ADDRESS_READ,
-            Action.WORKSPACE_READ,
-            Action.DOCUMENT_READ,
-            Action.DOCUMENT_UPDATE,
+            Permission.PROJECT_READ,
+            Permission.CUSTOMER_FILE_READ,
+            Permission.CUSTOMER_FILE_CREATE,
         }
     ),
-    InternalRole.TECHNICIAN: frozenset(
+    ExternalRole.TAX_ADVISOR: frozenset(),
+}
+
+
+_HIERARCHY_PERMISSIONS: dict[
+    HierarchyLevel,
+    frozenset[Permission],
+] = {
+    HierarchyLevel.APPRENTICE: frozenset(),
+    HierarchyLevel.PROFESSIONAL: frozenset(
         {
-            Action.PROJECT_READ,
-            Action.PROJECT_ADDRESS_READ,
-            Action.WORKSPACE_READ,
-            Action.DOCUMENT_READ,
+            Permission.PURCHASE_CREATE,
         }
     ),
-    InternalRole.VIEWER: frozenset(
+    HierarchyLevel.LEAD: frozenset(
         {
-            Action.PROJECT_READ,
-            Action.PROJECT_ADDRESS_READ,
-            Action.WORKSPACE_READ,
-            Action.DOCUMENT_READ,
+            Permission.CALENDAR_AVAILABILITY_READ,
+            Permission.CREW_ASSIGNMENT_REQUEST,
         }
     ),
 }
 
 
-_CUSTOMER_PERMISSIONS: dict[CustomerRole, frozenset[Action]] = {
-    CustomerRole.CUSTOMER: frozenset(
-        {
-            Action.PROJECT_READ,
-            Action.WORKSPACE_READ,
-            Action.CUSTOMER_FILE_DOWNLOAD,
-        }
-    ),
-    CustomerRole.CUSTOMER_MANAGER: frozenset(
-        {
-            Action.PROJECT_READ,
-            Action.WORKSPACE_READ,
-            Action.CUSTOMER_FILE_DOWNLOAD,
-            Action.CUSTOMER_FILE_CREATE,
-        }
-    ),
-}
+def calculate_age(
+    date_of_birth: date,
+    *,
+    as_of: date,
+) -> int:
+    """Calculate a user's age without persisting it."""
+
+    age = as_of.year - date_of_birth.year
+
+    if (as_of.month, as_of.day) < (
+        date_of_birth.month,
+        date_of_birth.day,
+    ):
+        age -= 1
+
+    return age
+
+
+def role_permissions(
+    user: UserPrincipal,
+) -> frozenset[Permission]:
+    """Return permissions provided by the user's concrete role."""
+
+    return _ROLE_PERMISSIONS[user.role]
+
+
+def hierarchy_permissions(
+    user: UserPrincipal,
+) -> frozenset[Permission]:
+    """Return permissions provided by the user's hierarchy level."""
+
+    if user.hierarchy_level is None:
+        return frozenset()
+
+    return _HIERARCHY_PERMISSIONS[user.hierarchy_level]
+
+
+def default_permissions(
+    user: UserPrincipal,
+) -> frozenset[Permission]:
+    """Return role and hierarchy permissions before explicit grants."""
+
+    return role_permissions(user) | hierarchy_permissions(user)
+
+
+def _project_scope_matches(
+    grant: PermissionGrant,
+    resource: Resource,
+) -> bool:
+    """Return whether a project-scoped grant matches the resource."""
+
+    return (
+        grant.scope_type is ScopeType.PROJECT
+        and resource.project_id is not None
+        and grant.scope_id == str(resource.project_id)
+    )
+
+
+def _workspace_scope_matches(
+    grant: PermissionGrant,
+    resource: Resource,
+) -> bool:
+    """Return whether a workspace-scoped grant matches the resource."""
+
+    return (
+        grant.scope_type is ScopeType.WORKSPACE
+        and resource.workspace is not None
+        and grant.scope_id == resource.workspace.value
+    )
+
+
+def _user_scope_matches(
+    grant: PermissionGrant,
+    resource: Resource,
+) -> bool:
+    """Return whether a user-scoped grant matches the resource."""
+
+    return (
+        grant.scope_type is ScopeType.USER
+        and resource.owner_user_id is not None
+        and grant.scope_id == str(resource.owner_user_id)
+    )
+
+
+def _grant_matches(
+    grant: PermissionGrant,
+    *,
+    principal_id: UUID,
+    permission: Permission,
+    resource: Resource,
+) -> bool:
+    """Return whether an explicit grant applies."""
+
+    if not grant.active:
+        return False
+
+    if grant.principal_id != principal_id:
+        return False
+
+    if grant.permission is not permission:
+        return False
+
+    if grant.scope_type is ScopeType.GLOBAL:
+        return grant.scope_id == "*"
+
+    if _project_scope_matches(grant, resource):
+        return True
+
+    if _workspace_scope_matches(grant, resource):
+        return True
+
+    return _user_scope_matches(grant, resource)
+
+
+def has_explicit_grant(
+    principal_id: UUID,
+    permission: Permission,
+    resource: Resource,
+    grants: tuple[PermissionGrant, ...],
+) -> bool:
+    """Return whether an explicit grant exists for the requested action."""
+
+    return any(
+        _grant_matches(
+            grant,
+            principal_id=principal_id,
+            permission=permission,
+            resource=resource,
+        )
+        for grant in grants
+    )
+
+
+def _customer_scope_matches(
+    user: UserPrincipal,
+    resource: Resource,
+) -> bool:
+    """Return whether an external customer may access the resource."""
+
+    if user.role is not ExternalRole.CUSTOMER:
+        return False
+
+    if user.customer_id is None:
+        return False
+
+    if resource.customer_id != user.customer_id:
+        return False
+
+    return resource.project_id is not None
+
+
+def _internal_project_scope_matches(
+    user: UserPrincipal,
+    resource: Resource,
+    assigned_project_ids: frozenset[UUID],
+) -> bool:
+    """Return whether an internal user is assigned to the project."""
+
+    if resource.project_id is None:
+        return True
+
+    return resource.project_id in assigned_project_ids
+
+
+def _customer_workspace_allowed(
+    user: UserPrincipal,
+    resource: Resource,
+) -> bool:
+    """Return whether a customer may access this workspace."""
+
+    if user.role is not ExternalRole.CUSTOMER:
+        return False
+
+    return resource.workspace is Workspace.CUSTOMER
+
+
+def _document_signing_policy(
+    user: UserPrincipal,
+    *,
+    as_of: date,
+) -> bool:
+    """Apply non-RBAC constraints for document signing."""
+
+    if user.user_type is not UserType.INTERNAL:
+        return False
+
+    if user.date_of_birth is None:
+        return False
+
+    return (
+        calculate_age(
+            user.date_of_birth,
+            as_of=as_of,
+        )
+        >= 18
+    )
+
+
+def _calendar_availability_allowed(
+    user: UserPrincipal,
+    resource: Resource,
+    *,
+    team_user_ids: frozenset[UUID],
+) -> bool:
+    """Limit lead calendar access to availability of their team."""
+
+    if user.user_type is not UserType.INTERNAL:
+        return False
+
+    if user.hierarchy_level is not HierarchyLevel.LEAD:
+        return False
+
+    if resource.owner_user_id is None:
+        return False
+
+    if resource.owner_user_id == user.id:
+        return True
+
+    return resource.owner_user_id in team_user_ids
 
 
 def authorize(
     principal: Principal,
-    action: Action,
-    project: Project,
+    permission: Permission,
+    resource: Resource,
     *,
-    workspace: Workspace | None = None,
+    assigned_project_ids: frozenset[UUID] = frozenset(),
+    team_user_ids: frozenset[UUID] = frozenset(),
+    grants: tuple[PermissionGrant, ...] = (),
+    as_of: date,
 ) -> AuthorizationDecision:
-    """Authorize an action against a project.
+    """Authorize one action against one resource.
 
-    Authorization follows the GlasHaus security model:
+    Evaluation order is intentionally conservative:
 
-    - inactive principals are denied;
-    - internal users require explicit project assignment;
-    - customer users require matching customer ownership and project access;
-    - customer users may only access the customer workspace;
-    - permissions are role-specific;
-    - federation is not implemented yet.
+    1. identity must be active and structurally valid;
+    2. relationship and scope restrictions are enforced;
+    3. policy constraints are enforced;
+    4. explicit grants are considered;
+    5. role/hierarchy defaults are considered.
+
+    Explicit grants can add permissions but cannot bypass mandatory security
+    constraints such as project ownership, customer isolation, or age policy.
     """
+
     if not principal.active:
         return AuthorizationDecision.DENY
 
-    if isinstance(principal, InternalUserPrincipal):
-        return _authorize_internal_user(
-            principal,
-            action,
-            project,
-            workspace,
+    if isinstance(principal, FederationPeerPrincipal):
+        if permission is not Permission.FEDERATION_PROJECT_READ:
+            return AuthorizationDecision.DENY
+
+        if resource.project_id is None:
+            return AuthorizationDecision.DENY
+
+        return (
+            AuthorizationDecision.ALLOW
+            if has_explicit_grant(
+                principal.id,
+                permission,
+                resource,
+                grants,
+            )
+            else AuthorizationDecision.DENY
         )
 
-    if isinstance(principal, CustomerUserPrincipal):
-        return _authorize_customer_user(
+    if principal.user_type is UserType.INTERNAL:
+        if not _internal_project_scope_matches(
             principal,
-            action,
-            project,
-            workspace,
+            resource,
+            assigned_project_ids,
+        ):
+            return AuthorizationDecision.DENY
+
+    elif principal.user_type is UserType.EXTERNAL:
+        if principal.role is ExternalRole.CUSTOMER:
+            if not _customer_scope_matches(principal, resource):
+                return AuthorizationDecision.DENY
+
+            if not _customer_workspace_allowed(principal, resource):
+                return AuthorizationDecision.DENY
+
+    if permission is Permission.TAX_DESK_READ:
+        if resource.workspace is not Workspace.TAX_DESK:
+            return AuthorizationDecision.DENY
+
+    if permission is Permission.CALENDAR_AVAILABILITY_READ:
+        if not _calendar_availability_allowed(
+            principal,
+            resource,
+            team_user_ids=team_user_ids,
+        ):
+            return AuthorizationDecision.DENY
+
+    if permission is Permission.CALENDAR_EVENT_READ:
+        if principal.hierarchy_level is HierarchyLevel.LEAD:
+            return AuthorizationDecision.DENY
+
+    if permission is Permission.CALENDAR_EVENT_LOCATION_READ:
+        if principal.hierarchy_level is HierarchyLevel.LEAD:
+            return AuthorizationDecision.DENY
+
+    if permission is Permission.DOCUMENT_SIGN:
+        if not _document_signing_policy(
+            principal,
+            as_of=as_of,
+        ):
+            return AuthorizationDecision.DENY
+
+    if has_explicit_grant(
+        principal.id,
+        permission,
+        resource,
+        grants,
+    ):
+        return AuthorizationDecision.ALLOW
+
+    if permission not in default_permissions(principal):
+        return AuthorizationDecision.DENY
+
+    if principal.role is ExternalRole.TAX_ADVISOR:
+        return AuthorizationDecision.DENY
+
+    if permission is Permission.CUSTOMER_FILE_READ:
+        return (
+            AuthorizationDecision.ALLOW
+            if principal.role is ExternalRole.CUSTOMER
+            and resource.workspace is Workspace.CUSTOMER
+            else AuthorizationDecision.DENY
         )
 
-    return AuthorizationDecision.DENY
-
-
-def _authorize_internal_user(
-    principal: InternalUserPrincipal,
-    action: Action,
-    project: Project,
-    workspace: Workspace | None,
-) -> AuthorizationDecision:
-    """Authorize an internal user."""
-    if project.id not in principal.assigned_project_ids:
-        return AuthorizationDecision.DENY
-
-    permissions = _INTERNAL_PERMISSIONS[principal.role]
-
-    if action not in permissions:
-        return AuthorizationDecision.DENY
-
-    if workspace is Workspace.CUSTOMER:
-        return AuthorizationDecision.ALLOW
-
-    if workspace is Workspace.INTERNAL:
-        return AuthorizationDecision.ALLOW
-
-    return AuthorizationDecision.ALLOW
-
-
-def _authorize_customer_user(
-    principal: CustomerUserPrincipal,
-    action: Action,
-    project: Project,
-    workspace: Workspace | None,
-) -> AuthorizationDecision:
-    """Authorize a customer user."""
-    if principal.customer_id != project.customer_id:
-        return AuthorizationDecision.DENY
-
-    if project.id not in principal.accessible_project_ids:
-        return AuthorizationDecision.DENY
-
-    permissions = _CUSTOMER_PERMISSIONS[principal.role]
-
-    if action not in permissions:
-        return AuthorizationDecision.DENY
-
-    if workspace is Workspace.INTERNAL:
-        return AuthorizationDecision.DENY
-
-    if workspace is None:
-        return AuthorizationDecision.ALLOW
+    if permission is Permission.CUSTOMER_FILE_CREATE:
+        return (
+            AuthorizationDecision.ALLOW
+            if principal.role is ExternalRole.CUSTOMER
+            and resource.workspace is Workspace.CUSTOMER
+            else AuthorizationDecision.DENY
+        )
 
     return AuthorizationDecision.ALLOW
