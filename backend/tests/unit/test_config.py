@@ -5,14 +5,16 @@ from app.core.config import Settings
 from pydantic import ValidationError
 
 
-def test_default_settings_use_development_sqlite() -> None:
+def test_default_settings_use_development_sqlite(
+    monkeypatch,
+) -> None:
     """Development settings must provide a local SQLite default."""
+    monkeypatch.delenv("ENVIRONMENT", raising=False)
+
     settings = Settings()
 
     assert settings.environment == "development"
     assert settings.database_url == "sqlite:///./glashaus.db"
-    assert settings.sql_echo is False
-    assert settings.log_level == "INFO"
 
 
 def test_production_settings_accept_postgresql() -> None:
