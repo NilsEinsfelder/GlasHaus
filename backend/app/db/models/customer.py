@@ -6,7 +6,7 @@ from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid7
 
-from sqlalchemy import JSON, CheckConstraint, Index, String
+from sqlalchemy import JSON, CheckConstraint, Enum, Index, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.models.base import Base, TimestampMixin
@@ -44,7 +44,12 @@ class Customer(Base, TimestampMixin):
     )
 
     customer_type: Mapped[CustomerType] = mapped_column(
-        String(32),
+        Enum(
+            CustomerType,
+            native_enum=False,
+            length=32,
+            name="customertype",
+        ),
         nullable=False,
     )
 
