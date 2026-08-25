@@ -16,9 +16,28 @@ jobs:
     name: Backend Quality
     runs-on: ubuntu-latest
 
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: glashaus
+          POSTGRES_PASSWORD: glashaus
+          POSTGRES_DB: glashaus
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U glashaus -d glashaus"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
     defaults:
       run:
         working-directory: backend
+
+    env:
+      ENVIRONMENT: test
+      DATABASE_URL: postgresql+psycopg://glashaus:glashaus@localhost:5432/glashaus
 
     steps:
       - name: Checkout repository
@@ -43,5 +62,15 @@ jobs:
       - name: MyPy
         run: mypy app
 
-      - name: Unit tests
-        run: pytest tests/unit
+      - name: Alembic migration verification
+        run: |
+          alembic upgrade head
+          alembic current
+          alembic check
+          alembic downgrade base
+          alembic upgrade head
+
+      - name: Tests
+        run: pytest
+      - name: Git diff check
+        run: git diff --check

@@ -13,6 +13,7 @@ readme = "README.md"
 requires-python = ">=3.14,<3.15"
 
 dependencies = [
+    "alembic>=1.16,<2.0",
     "fastapi>=0.116,<1.0",
     "uvicorn[standard]>=0.35,<1.0",
     "pydantic-settings>=2.10,<3.0",
@@ -22,7 +23,6 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "alembic>=1.16,<2.0",
     "httpx>=0.28,<1.0",
     "mypy>=1.17,<2.0",
     "pre-commit>=4.2,<5.0",
@@ -54,7 +54,6 @@ select = [
     "UP",
     "S",
 ]
-
 ignore = [
     "E501",
 ]
@@ -83,11 +82,9 @@ no_implicit_optional = true
 testpaths = [
     "tests",
 ]
-
 pythonpath = [
     ".",
 ]
-
 addopts = [
     "--strict-config",
     "--strict-markers",
