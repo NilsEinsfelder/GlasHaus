@@ -1,7 +1,6 @@
 """PostgreSQL integration tests for the Alembic migration workflow."""
 
 import os
-from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -14,6 +13,8 @@ from app.db.models import (
     Project,
     ProjectAssignment,
     User,
+    UserRole,
+    UserType,
 )
 from sqlalchemy import create_engine, inspect
 from sqlalchemy.orm import Session
@@ -74,6 +75,9 @@ def test_postgresql_domain_roundtrip() -> None:
         with Session(engine) as session:
             user = User(
                 login_identifier="postgres-roundtrip-user",
+                display_name="PostgreSQL Roundtrip User",
+                user_type=UserType.INTERNAL,
+                role=UserRole.TECHNICIAN,
             )
             customer = Customer(
                 name="PostgreSQL Test Customer",
@@ -86,7 +90,7 @@ def test_postgresql_domain_roundtrip() -> None:
                 user_id=user.id,
                 hierarchy_level="LEVEL_1",
                 employment_status="ACTIVE",
-                valid_from=datetime(2026, 1, 1, tzinfo=UTC),
+                valid_from=user.created_at,
             )
             project = Project(
                 customer_id=customer.id,
@@ -99,8 +103,8 @@ def test_postgresql_domain_roundtrip() -> None:
             assignment = ProjectAssignment(
                 user_id=user.id,
                 project_id=project.id,
-                assignment_context="MEMBER",
-                valid_from=datetime(2026, 1, 1, tzinfo=UTC),
+                assignment_context="PostgreSQL roundtrip",
+                valid_from=project.created_at,
             )
             session.add(assignment)
             session.commit()
@@ -120,10 +124,17 @@ def test_postgresql_domain_roundtrip() -> None:
             )
 
             assert loaded_user is not None
+            assert loaded_user.login_identifier == "postgres-roundtrip-user"
+            assert loaded_user.display_name == "PostgreSQL Roundtrip User"
+            assert loaded_user.user_type is UserType.INTERNAL
+            assert loaded_user.role is UserRole.TECHNICIAN
+
             assert loaded_customer is not None
             assert loaded_customer.customer_type is CustomerType.COMPANY
+
             assert loaded_project is not None
             assert loaded_project.customer_id == persisted_customer_id
+
             assert loaded_assignment is not None
             assert loaded_assignment.user_id == persisted_user_id
             assert loaded_assignment.project_id == persisted_project_id
