@@ -14,7 +14,15 @@ def test_initialize_database_creates_all_registered_tables() -> None:
 
         table_names = set(inspect(engine).get_table_names())
 
-        assert table_names == {"devices", "sync_states"}
+        assert table_names == {
+            "devices",
+            "sync_states",
+            "users",
+            "employments",
+            "customers",
+            "projects",
+            "project_assignments",
+        }
     finally:
         engine.dispose()
 

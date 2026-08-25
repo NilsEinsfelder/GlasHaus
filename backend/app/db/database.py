@@ -3,7 +3,7 @@
 from collections.abc import Generator
 from typing import Any
 
-from sqlalchemy import Engine, create_engine
+from sqlalchemy import Engine, create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import get_settings
@@ -30,6 +30,22 @@ engine: Engine = create_engine(
     echo=settings.sql_echo,
     **_engine_kwargs(settings.database_url),
 )
+
+
+if settings.database_url.startswith("sqlite"):
+
+    @event.listens_for(engine, "connect")
+    def _enable_sqlite_foreign_keys(
+        dbapi_connection: Any,
+        _connection_record: Any,
+    ) -> None:
+        """Enable SQLite foreign-key enforcement for every connection."""
+        cursor = dbapi_connection.cursor()
+        try:
+            cursor.execute("PRAGMA foreign_keys=ON")
+        finally:
+            cursor.close()
+
 
 SessionFactory = sessionmaker(
     bind=engine,

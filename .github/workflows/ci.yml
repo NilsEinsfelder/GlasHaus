@@ -38,6 +38,7 @@ jobs:
     env:
       ENVIRONMENT: test
       DATABASE_URL: postgresql+psycopg://glashaus:glashaus@localhost:5432/glashaus
+      GLASHAUS_TEST_DATABASE_URL: postgresql+psycopg://glashaus:glashaus@localhost:5432/glashaus
 
     steps:
       - name: Checkout repository
@@ -72,5 +73,9 @@ jobs:
 
       - name: Tests
         run: pytest
+
+      - name: PostgreSQL integration tests
+        run: pytest tests/integration/test_postgresql_migration.py -v --no-cov
+
       - name: Git diff check
         run: git diff --check

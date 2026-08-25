@@ -142,13 +142,7 @@ An internal user belongs to the organization operating the GlasHaus server.
 Examples include:
 
 - technician
-- technician apprentice
-- senior technician
-- site supervisor
-- office employee
-- office apprentice
-- management
-- administration
+- office
 
 The exact role catalogue is extensible.
 

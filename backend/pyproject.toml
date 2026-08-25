@@ -82,9 +82,15 @@ no_implicit_optional = true
 testpaths = [
     "tests",
 ]
+
 pythonpath = [
     ".",
 ]
+
+markers = [
+    "postgresql: tests requiring PostgreSQL",
+]
+
 addopts = [
     "--strict-config",
     "--strict-markers",
