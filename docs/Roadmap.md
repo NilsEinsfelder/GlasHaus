@@ -95,6 +95,8 @@ The implementation does not yet represent the complete target architecture.
 
 Architecture approval must therefore not be confused with implementation completion.
 
+Phase 1 — Backend Foundation is complete.
+
 ---
 
 ## 4. Phase 0 — Architecture Baseline
@@ -146,7 +148,7 @@ Exit criteria:
 
 ## 5. Phase 1 — Backend Foundation
 
-Status: substantially complete.
+Status: complete
 
 Goal:
 
@@ -162,15 +164,12 @@ Completed foundations include:
 - [x] UUIDv7 identifier direction
 - [x] quality tooling
 - [x] automated tests
-
-Remaining foundation work:
-
-- [ ] production PostgreSQL verification
-- [ ] complete Alembic migration workflow verification
-- [ ] logging foundation
-- [ ] application error handling
-- [ ] CI quality gates
-- [ ] production configuration verification
+- [x] production PostgreSQL verification
+- [x] complete Alembic migration workflow verification
+- [x] logging foundation
+- [x] application error handling
+- [x] CI quality gates
+- [x] production configuration verification
 
 Exit criteria:
 
