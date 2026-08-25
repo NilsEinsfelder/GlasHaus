@@ -78,12 +78,10 @@ class User(Base, TimestampMixin):
     )
 
     user_type: Mapped[UserType] = mapped_column(
-        String(32),
         nullable=False,
     )
 
     role: Mapped[UserRole] = mapped_column(
-        String(64),
         nullable=False,
     )
 
