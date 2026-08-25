@@ -71,6 +71,12 @@ The current repository contains foundational implementation work including:
 - Ruff
 - MyPy
 - initial authorization-model prototype
+- first persistence-domain slice:
+    - User
+    - Employment
+    - Customer
+    - Project
+    - ProjectAssignment
 
 The target architecture now defines:
 
@@ -96,6 +102,13 @@ The implementation does not yet represent the complete target architecture.
 Architecture approval must therefore not be confused with implementation completion.
 
 Phase 1 — Backend Foundation is complete.
+
+Phase 2 — Persistence Model is in progress.
+
+    The first dependency-aware persistence slice is implemented:
+        User, Employment, Customer, Project and ProjectAssignment.
+
+    The remaining Phase 2 entities are intentionally not yet implemented.
 
 ---
 
@@ -179,7 +192,7 @@ The backend foundation is reproducible, testable and suitable for the first prod
 
 ## 6. Phase 2 — Persistence Model
 
-Status: next implementation phase.
+Status: in progress — core persistence slice complete.
 
 Goal:
 
@@ -187,11 +200,16 @@ Implement the relational foundation for identity, authorization and core busines
 
 Implementation order:
 
+Finished:
+
 1. User
 2. Employment
 3. Customer
 4. Project
 5. Project Assignment
+
+To-Do:
+
 6. External Relationship
 7. Customer Project Access
 8. Workspace
