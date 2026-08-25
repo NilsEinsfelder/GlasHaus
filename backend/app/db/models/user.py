@@ -7,7 +7,7 @@ from enum import StrEnum
 from typing import TYPE_CHECKING
 from uuid import UUID, uuid7
 
-from sqlalchemy import CheckConstraint, Index, String, UniqueConstraint
+from sqlalchemy import CheckConstraint, Enum, Index, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.models.base import Base, TimestampMixin
@@ -78,10 +78,22 @@ class User(Base, TimestampMixin):
     )
 
     user_type: Mapped[UserType] = mapped_column(
+        Enum(
+            UserType,
+            native_enum=False,
+            length=32,
+            name="usertype",
+        ),
         nullable=False,
     )
 
     role: Mapped[UserRole] = mapped_column(
+        Enum(
+            UserRole,
+            native_enum=False,
+            length=64,
+            name="userrole",
+        ),
         nullable=False,
     )
 
