@@ -14,6 +14,7 @@ from app.db.models.base import Base, TimestampMixin
 
 if TYPE_CHECKING:
     from app.db.models.employment import Employment
+    from app.db.models.external_relationship import ExternalRelationship
     from app.db.models.project_assignment import ProjectAssignment
 
 
@@ -108,6 +109,12 @@ class User(Base, TimestampMixin):
     )
 
     project_assignments: Mapped[list[ProjectAssignment]] = relationship(
+        back_populates="user",
+        passive_deletes=True,
+    )
+
+    external_relationships: Mapped[list[ExternalRelationship]] = relationship(
+        foreign_keys="ExternalRelationship.user_id",
         back_populates="user",
         passive_deletes=True,
     )

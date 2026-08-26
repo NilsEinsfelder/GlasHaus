@@ -12,6 +12,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.models.base import Base, TimestampMixin
 
 if TYPE_CHECKING:
+    from app.db.models.external_relationship import ExternalRelationship
     from app.db.models.project import Project
 
 
@@ -69,6 +70,11 @@ class Customer(Base, TimestampMixin):
     )
 
     projects: Mapped[list[Project]] = relationship(
+        back_populates="customer",
+        passive_deletes=True,
+    )
+
+    external_relationships: Mapped[list[ExternalRelationship]] = relationship(
         back_populates="customer",
         passive_deletes=True,
     )

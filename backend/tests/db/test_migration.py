@@ -46,6 +46,7 @@ def test_upgrade_to_head_creates_domain_schema(
             "customers",
             "projects",
             "project_assignments",
+            "external_relationships",
         } <= tables
 
     finally:
@@ -75,6 +76,7 @@ def test_downgrade_from_head_removes_domain_schema(
         assert "customers" not in tables
         assert "projects" not in tables
         assert "project_assignments" not in tables
+        assert "external_relationships" not in tables
 
         assert "devices" in tables
         assert "sync_states" in tables

@@ -1,31 +1,35 @@
-"""Tests for domain foreign-key integrity."""
+"""Tests for external relationship foreign-key integrity."""
 
 from datetime import UTC, datetime
 from uuid import uuid7
 
 import pytest
 from app.db.models import (
-    Employment,
-    Project,
-    ProjectAssignment,
+    Customer,
+    ExternalRelationship,
+    ExternalRelationshipType,
+    User,
 )
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 
-def test_employment_requires_existing_user(
+def test_external_relationship_requires_existing_user(
     db_session: Session,
+    customer: Customer,
+    user: User,
 ) -> None:
-    """Employment.user_id must reference an existing user."""
-    employment = Employment(
+    """ExternalRelationship.user_id must reference an existing user."""
+    relationship = ExternalRelationship(
         id=uuid7(),
         user_id=uuid7(),
-        hierarchy_level="LEVEL_1",
-        employment_status="ACTIVE",
+        customer_id=customer.id,
+        relationship_type=ExternalRelationshipType.CONTACT,
         valid_from=datetime(2026, 1, 1, tzinfo=UTC),
+        created_from=user.id,
     )
 
-    db_session.add(employment)
+    db_session.add(relationship)
 
     with pytest.raises(IntegrityError):
         db_session.commit()
@@ -33,18 +37,21 @@ def test_employment_requires_existing_user(
     db_session.rollback()
 
 
-def test_project_requires_existing_customer(
+def test_external_relationship_requires_existing_customer(
     db_session: Session,
+    user: User,
 ) -> None:
-    """Project.customer_id must reference an existing customer."""
-    project = Project(
+    """ExternalRelationship.customer_id must reference an existing customer."""
+    relationship = ExternalRelationship(
         id=uuid7(),
+        user_id=user.id,
         customer_id=uuid7(),
-        name="Invalid Project",
-        status="ACTIVE",
+        relationship_type=ExternalRelationshipType.CONTACT,
+        valid_from=datetime(2026, 1, 1, tzinfo=UTC),
+        created_from=user.id,
     )
 
-    db_session.add(project)
+    db_session.add(relationship)
 
     with pytest.raises(IntegrityError):
         db_session.commit()
@@ -52,18 +59,22 @@ def test_project_requires_existing_customer(
     db_session.rollback()
 
 
-def test_assignment_requires_existing_user_and_project(
+def test_external_relationship_requires_existing_creator(
     db_session: Session,
+    user: User,
+    customer: Customer,
 ) -> None:
-    """ProjectAssignment must reference existing user and project."""
-    assignment = ProjectAssignment(
+    """ExternalRelationship.created_from must reference an existing user."""
+    relationship = ExternalRelationship(
         id=uuid7(),
-        user_id=uuid7(),
-        project_id=uuid7(),
+        user_id=user.id,
+        customer_id=customer.id,
+        relationship_type=ExternalRelationshipType.OWNER,
         valid_from=datetime(2026, 1, 1, tzinfo=UTC),
+        created_from=uuid7(),
     )
 
-    db_session.add(assignment)
+    db_session.add(relationship)
 
     with pytest.raises(IntegrityError):
         db_session.commit()

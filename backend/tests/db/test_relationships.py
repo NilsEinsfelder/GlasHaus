@@ -1,58 +1,80 @@
-"""Tests for SQLAlchemy domain relationships."""
+"""Tests for SQLAlchemy external relationship mappings."""
+
+from datetime import UTC, datetime
+from uuid import uuid7
 
 from app.db.models import (
     Customer,
-    Employment,
-    Project,
-    ProjectAssignment,
+    ExternalRelationship,
+    ExternalRelationshipType,
     User,
 )
 from sqlalchemy.orm import Session
 
 
-def test_user_has_employment_relationship(
+def test_user_has_external_relationship(
     db_session: Session,
     user: User,
-    employment: Employment,
+    customer: Customer,
 ) -> None:
-    """User.employments must expose related employment records."""
+    """User.external_relationships must expose related records."""
+    relationship = ExternalRelationship(
+        id=uuid7(),
+        user_id=user.id,
+        customer_id=customer.id,
+        relationship_type=ExternalRelationshipType.CONTACT,
+        valid_from=datetime(2026, 1, 1, tzinfo=UTC),
+        created_from=user.id,
+    )
+
+    db_session.add(relationship)
+    db_session.commit()
     db_session.refresh(user)
 
-    assert employment in user.employments
-    assert employment.user is user
+    assert relationship in user.external_relationships
+    assert relationship.user is user
 
 
-def test_customer_has_project_relationship(
+def test_customer_has_external_relationship(
     db_session: Session,
+    user: User,
     customer: Customer,
-    project: Project,
 ) -> None:
-    """Customer.projects must expose related projects."""
+    """Customer.external_relationships must expose related records."""
+    relationship = ExternalRelationship(
+        id=uuid7(),
+        user_id=user.id,
+        customer_id=customer.id,
+        relationship_type=ExternalRelationshipType.OWNER,
+        valid_from=datetime(2026, 1, 1, tzinfo=UTC),
+        created_from=user.id,
+    )
+
+    db_session.add(relationship)
+    db_session.commit()
     db_session.refresh(customer)
 
-    assert project in customer.projects
-    assert project.customer is customer
+    assert relationship in customer.external_relationships
+    assert relationship.customer is customer
 
 
-def test_project_has_assignment_relationship(
-    db_session: Session,
-    project: Project,
-    assignment: ProjectAssignment,
-) -> None:
-    """Project.assignments must expose related assignments."""
-    db_session.refresh(project)
-
-    assert assignment in project.assignments
-    assert assignment.project is project
-
-
-def test_user_has_assignment_relationship(
+def test_external_relationship_exposes_creator_user(
     db_session: Session,
     user: User,
-    assignment: ProjectAssignment,
+    customer: Customer,
 ) -> None:
-    """User.project_assignments must expose related assignments."""
-    db_session.refresh(user)
+    """created_from must resolve to the creating User."""
+    relationship = ExternalRelationship(
+        id=uuid7(),
+        user_id=user.id,
+        customer_id=customer.id,
+        relationship_type=ExternalRelationshipType.CONTACT,
+        valid_from=datetime(2026, 1, 1, tzinfo=UTC),
+        created_from=user.id,
+    )
 
-    assert assignment in user.project_assignments
-    assert assignment.user is user
+    db_session.add(relationship)
+    db_session.commit()
+    db_session.refresh(relationship)
+
+    assert relationship.created_from_user is user

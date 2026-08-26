@@ -24,6 +24,7 @@ FULL_SCHEMA_TABLES = {
     "customers",
     "projects",
     "project_assignments",
+    "external_relationships",
 }
 
 
