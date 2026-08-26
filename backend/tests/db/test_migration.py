@@ -47,6 +47,7 @@ def test_upgrade_to_head_creates_domain_schema(
             "projects",
             "project_assignments",
             "external_relationships",
+            "customer_project_accesses",
         } <= tables
 
     finally:
@@ -80,6 +81,49 @@ def test_downgrade_from_head_removes_domain_schema(
 
         assert "devices" in tables
         assert "sync_states" in tables
+
+    finally:
+        engine.dispose()
+
+
+def test_customer_project_access_migration_roundtrip(
+    tmp_path: Path,
+) -> None:
+    """Customer project access migration must upgrade and downgrade cleanly."""
+    database_path = tmp_path / "customer_project_access.db"
+    database_url = f"sqlite:///{database_path}"
+
+    engine = create_engine(database_url)
+
+    try:
+        config = _alembic_config(database_url)
+
+        command.upgrade(config, "head")
+
+        inspector = inspect(engine)
+        assert "customer_project_accesses" in inspector.get_table_names()
+
+        columns = {
+            column["name"]
+            for column in inspector.get_columns("customer_project_accesses")
+        }
+
+        assert columns == {
+            "id",
+            "project_id",
+            "user_id",
+            "valid_from",
+            "valid_until",
+            "active",
+            "created_from",
+            "created_at",
+            "updated_at",
+        }
+
+        command.downgrade(config, "0003_external_relationship")
+
+        inspector = inspect(engine)
+        assert "customer_project_accesses" not in inspector.get_table_names()
 
     finally:
         engine.dispose()

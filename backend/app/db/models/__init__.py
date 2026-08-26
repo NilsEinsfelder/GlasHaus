@@ -1,5 +1,6 @@
 from app.db.models.base import Base, TimestampMixin, utc_now
 from app.db.models.customer import Customer, CustomerType
+from app.db.models.customer_project_access import CustomerProjectAccess
 from app.db.models.device import Device, DeviceStatus
 from app.db.models.employment import Employment
 from app.db.models.external_relationship import (
@@ -14,6 +15,7 @@ from app.db.models.user import User, UserRole, UserType
 __all__ = [
     "Base",
     "Customer",
+    "CustomerProjectAccess",
     "CustomerType",
     "Device",
     "DeviceStatus",

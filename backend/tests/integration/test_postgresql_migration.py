@@ -9,6 +9,7 @@ from alembic import command
 from alembic.config import Config
 from app.db.models import (
     Customer,
+    CustomerProjectAccess,
     CustomerType,
     Employment,
     ExternalRelationship,
@@ -63,6 +64,7 @@ def test_postgresql_migration_reaches_head() -> None:
             "projects",
             "project_assignments",
             "external_relationships",
+            "customer_project_accesses",
         }
     finally:
         engine.dispose()
@@ -294,6 +296,196 @@ def test_postgresql_external_relationship_utc_roundtrip() -> None:
             )
 
             assert loaded is not None
+            assert loaded.valid_from == valid_from
+            assert loaded.valid_from.tzinfo is not None
+
+            assert loaded.valid_until == valid_until
+            assert loaded.valid_until.tzinfo is not None
+
+            assert loaded.created_at.tzinfo is not None
+            assert loaded.updated_at.tzinfo is not None
+    finally:
+        engine.dispose()
+
+
+def test_postgresql_customer_project_access_schema() -> None:
+    """PostgreSQL must create the customer project access schema correctly."""
+    database_url = _database_url()
+    config = _alembic_config(database_url)
+
+    command.upgrade(config, "head")
+
+    engine = create_engine(database_url)
+
+    try:
+        inspector = inspect(engine)
+
+        columns = {
+            column["name"]: column
+            for column in inspector.get_columns("customer_project_accesses")
+        }
+
+        assert set(columns) == {
+            "id",
+            "project_id",
+            "user_id",
+            "valid_from",
+            "valid_until",
+            "active",
+            "created_from",
+            "created_at",
+            "updated_at",
+        }
+
+        assert columns["id"]["nullable"] is False
+        assert columns["project_id"]["nullable"] is False
+        assert columns["user_id"]["nullable"] is False
+        assert columns["valid_from"]["nullable"] is False
+        assert columns["valid_until"]["nullable"] is True
+        assert columns["active"]["nullable"] is False
+        assert columns["created_from"]["nullable"] is False
+
+        foreign_keys = inspector.get_foreign_keys(
+            "customer_project_accesses",
+        )
+
+        foreign_key_map = {
+            tuple(foreign_key["constrained_columns"]): foreign_key
+            for foreign_key in foreign_keys
+        }
+
+        project_foreign_key = foreign_key_map[("project_id",)]
+        assert project_foreign_key["referred_table"] == "projects"
+        assert project_foreign_key["referred_columns"] == ["id"]
+        assert project_foreign_key["options"]["ondelete"] == "RESTRICT"
+
+        user_foreign_key = foreign_key_map[("user_id",)]
+        assert user_foreign_key["referred_table"] == "users"
+        assert user_foreign_key["referred_columns"] == ["id"]
+        assert user_foreign_key["options"]["ondelete"] == "RESTRICT"
+
+        created_from_foreign_key = foreign_key_map[("created_from",)]
+        assert created_from_foreign_key["referred_table"] == "users"
+        assert created_from_foreign_key["referred_columns"] == ["id"]
+        assert created_from_foreign_key["options"]["ondelete"] == "RESTRICT"
+    finally:
+        engine.dispose()
+
+
+def test_postgresql_customer_project_access_uses_timezone_aware_timestamps() -> None:
+    """CustomerProjectAccess timestamps must use PostgreSQL TIMESTAMP WITH TIME ZONE."""
+    database_url = _database_url()
+    config = _alembic_config(database_url)
+
+    command.upgrade(config, "head")
+
+    engine = create_engine(database_url)
+
+    try:
+        inspector = inspect(engine)
+
+        columns = {
+            column["name"]: column
+            for column in inspector.get_columns("customer_project_accesses")
+        }
+
+        for column_name in (
+            "valid_from",
+            "valid_until",
+            "created_at",
+            "updated_at",
+        ):
+            column_type = columns[column_name]["type"]
+
+            assert isinstance(column_type, TIMESTAMP)
+            assert column_type.timezone is True
+    finally:
+        engine.dispose()
+
+
+def test_postgresql_customer_project_access_utc_roundtrip() -> None:
+    """UTC-aware customer project access timestamps must survive PostgreSQL."""
+    database_url = _database_url()
+    config = _alembic_config(database_url)
+
+    command.upgrade(config, "head")
+
+    engine = create_engine(database_url)
+
+    valid_from = datetime(
+        2026,
+        1,
+        1,
+        12,
+        30,
+        tzinfo=UTC,
+    )
+    valid_until = datetime(
+        2026,
+        12,
+        31,
+        18,
+        45,
+        tzinfo=UTC,
+    )
+
+    try:
+        with Session(engine) as session:
+            user = User(
+                login_identifier="postgres-customer-access-internal-user",
+                display_name="PostgreSQL Customer Access Internal User",
+                user_type=UserType.INTERNAL,
+                role=UserRole.TECHNICIAN,
+            )
+            external_user = User(
+                login_identifier="postgres-customer-access-external-user",
+                display_name="PostgreSQL Customer Access External User",
+                user_type=UserType.EXTERNAL,
+                role=UserRole.CUSTOMER,
+            )
+            customer = Customer(
+                name="PostgreSQL Customer Access Customer",
+                customer_type=CustomerType.COMPANY,
+            )
+
+            session.add_all([user, external_user, customer])
+            session.flush()
+
+            project = Project(
+                customer_id=customer.id,
+                name="PostgreSQL Customer Access Project",
+                status="ACTIVE",
+            )
+
+            session.add(project)
+            session.flush()
+
+            access = CustomerProjectAccess(
+                project_id=project.id,
+                user_id=external_user.id,
+                valid_from=valid_from,
+                valid_until=valid_until,
+                active=True,
+                created_from=user.id,
+            )
+
+            session.add(access)
+            session.commit()
+
+            access_id = access.id
+
+        with Session(engine) as session:
+            loaded = session.get(
+                CustomerProjectAccess,
+                access_id,
+            )
+
+            assert loaded is not None
+            assert loaded.project_id == project.id
+            assert loaded.user_id == external_user.id
+            assert loaded.created_from == user.id
+            assert loaded.active is True
+
             assert loaded.valid_from == valid_from
             assert loaded.valid_from.tzinfo is not None
 

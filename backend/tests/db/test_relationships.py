@@ -5,9 +5,12 @@ from uuid import uuid7
 
 from app.db.models import (
     Customer,
+    CustomerProjectAccess,
     ExternalRelationship,
     ExternalRelationshipType,
     User,
+    UserRole,
+    UserType,
 )
 from sqlalchemy.orm import Session
 
@@ -78,3 +81,69 @@ def test_external_relationship_exposes_creator_user(
     db_session.refresh(relationship)
 
     assert relationship.created_from_user is user
+
+
+def test_project_has_customer_project_access_relationship(
+    db_session: Session,
+    project,
+    user: User,
+) -> None:
+    """Project.customer_project_accesses must expose related access records."""
+    external_user = User(
+        login_identifier="relationship-external-user",
+        display_name="Relationship External User",
+        user_type=UserType.EXTERNAL,
+        role=UserRole.CUSTOMER,
+        active=True,
+    )
+    db_session.add(external_user)
+    db_session.commit()
+    db_session.refresh(external_user)
+
+    access = CustomerProjectAccess(
+        project_id=project.id,
+        user_id=external_user.id,
+        valid_from=datetime(2026, 1, 1, tzinfo=UTC),
+        active=True,
+        created_from=user.id,
+    )
+    db_session.add(access)
+    db_session.commit()
+
+    db_session.refresh(project)
+
+    assert access in project.customer_project_accesses
+    assert access.project is project
+
+
+def test_user_has_customer_project_access_relationship(
+    db_session: Session,
+    project,
+    user: User,
+) -> None:
+    """User.customer_project_accesses must expose related access records."""
+    external_user = User(
+        login_identifier="relationship-external-user-2",
+        display_name="Relationship External User 2",
+        user_type=UserType.EXTERNAL,
+        role=UserRole.CUSTOMER,
+        active=True,
+    )
+    db_session.add(external_user)
+    db_session.commit()
+    db_session.refresh(external_user)
+
+    access = CustomerProjectAccess(
+        project_id=project.id,
+        user_id=external_user.id,
+        valid_from=datetime(2026, 1, 1, tzinfo=UTC),
+        active=True,
+        created_from=user.id,
+    )
+    db_session.add(access)
+    db_session.commit()
+
+    db_session.refresh(external_user)
+
+    assert access in external_user.customer_project_accesses
+    assert access.user is external_user

@@ -208,10 +208,10 @@ Finished:
 4. Project
 5. Project Assignment
 6. External Relationship
+7. Customer Project Access
 
 To-Do:
 
-7. Customer Project Access
 8. Workspace
 9. Permission model
 10. Permission Grant

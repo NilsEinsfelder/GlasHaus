@@ -1388,69 +1388,37 @@ The concrete `Purchase` persistence model is intentionally deferred until the pu
 The following persistence invariants must remain true unless this architecture is explicitly changed:
 
 1. The local server is the normal organizational boundary.
-
 2. Local domain records do not require a tenant `organization_id`.
-
 3. Every User has exactly one User Type.
-
 4. Every User has exactly one current Role.
-
 5. Age is derived from `date_of_birth`.
-
 6. Employment history does not overwrite historical state.
-
 7. Current hierarchy is derived from the effective Employment context for internal users.
-
 8. `EXTERNAL` is a generic User Type.
-
 9. Customer is a business entity, not a User Type.
-
 10. External business relationships are persisted separately from User identity.
-
 11. Project access is represented explicitly.
-
 12. Internal project access requires an applicable ProjectAssignment.
-
 13. Customer project access requires both the applicable Customer relationship and explicit project access.
-
 14. Workspace type is a security boundary.
-
 15. Internal and Customer Workspaces remain separate.
-
-16. Documents belong to a Project and Workspace.
-
+16. Documents belong to a Project and Workspace. # needs to be revisited, since granted vacations, paychecks, etc. are documents too, not belonging to a Project. 
 17. Document versions are immutable historical resources.
-
 18. Permission grants and restrictions are explicit and scoped.
-
 19. Persisted permission grants do not bypass authorization policy.
-
 20. Permission identifiers are canonical and shared with the authorization model.
-
 21. Permission scope is represented separately from the Permission identifier.
-
 22. Purchasing limits are constraints on purchasing authority, not separate Permissions.
-
 23. Project-scoped purchasing does not imply organization-wide purchasing authority.
-
 24. Devices can be revoked independently of Users.
-
 25. Sessions establish authentication context but do not grant authorization.
-
 26. Audit data is protected information.
-
 27. Federation peers are not local Users.
-
 28. Synchronization metadata does not create a second authorization model.
-
 29. Binary content is stored outside the relational database.
-
 30. Secret production key material is not stored alongside ciphertext.
-
 31. Authorization is not delegated to persistence relationships.
-
 32. Known resource identifiers never imply access.
-
 33. Production schema changes are managed through Alembic.
 
 ---
@@ -1468,13 +1436,9 @@ This document must be read together with:
 * `docs/Roadmap.md`
 
 `docs/IDENTITY_AUTHORIZATION.md` defines authorization semantics.
-
 `docs/PERSISTENCE_MODEL.md` defines how those domain concepts are represented persistently.
-
 `docs/SECURITY.md` defines the security controls and threat model.
-
 `docs/CRYPTOGRAPHY.md` defines cryptographic mechanisms and key management.
-
 `docs/SYNC.md` defines synchronization semantics.
 
 The implementation must not silently diverge from these documents.

@@ -13,6 +13,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.models.base import Base, TimestampMixin
 
 if TYPE_CHECKING:
+    from app.db.models.customer_project_access import CustomerProjectAccess
     from app.db.models.employment import Employment
     from app.db.models.external_relationship import ExternalRelationship
     from app.db.models.project_assignment import ProjectAssignment
@@ -116,5 +117,11 @@ class User(Base, TimestampMixin):
     external_relationships: Mapped[list[ExternalRelationship]] = relationship(
         foreign_keys="ExternalRelationship.user_id",
         back_populates="user",
+        passive_deletes=True,
+    )
+
+    customer_project_accesses: Mapped[list[CustomerProjectAccess]] = relationship(
+        back_populates="user",
+        foreign_keys="CustomerProjectAccess.user_id",
         passive_deletes=True,
     )
