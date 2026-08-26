@@ -637,6 +637,7 @@ Project
 ├── status
 ├── address_metadata
 ├── created_at
+├── created_from
 └── updated_at
 ```
 
@@ -671,6 +672,7 @@ ProjectAssignment
 ├── valid_until
 ├── active
 ├── created_at
+├── created_from
 └── updated_at
 ```
 
@@ -699,6 +701,7 @@ CustomerProjectAccess
 ├── valid_until
 ├── active
 ├── created_at
+├── created_from
 └── updated_at
 ```
 
@@ -739,6 +742,7 @@ Workspace
 ├── project_id
 ├── workspace_type
 ├── created_at
+├── created_from
 └── updated_at
 ```
 
@@ -768,7 +772,7 @@ Document
 ├── id
 ├── project_id
 ├── workspace_id
-├── created_by_user_id
+├── created_from
 ├── filename
 ├── media_type
 ├── status
@@ -824,7 +828,7 @@ DocumentVersion
 ├── size
 ├── encryption_version
 ├── encryption_key_id
-├── created_by_user_id
+├── created_from
 └── created_at
 ```
 
@@ -1031,7 +1035,7 @@ Purchase
 ├── id
 ├── project_id
 ├── organizational_scope
-├── created_by_user_id
+├── created_from
 ├── amount
 └── ...
 ```
