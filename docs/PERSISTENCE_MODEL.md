@@ -587,15 +587,14 @@ ExternalRelationship
 ├── valid_until
 ├── active
 ├── created_at
+├── created_from
 └── updated_at
 ```
 
 The initial relationship types are:
 
-* `CUSTOMER`
-* `SUPPLIER`
-* `TAX_ADVISOR`
-* `PARTNER`
+* `OWNER`
+* `CONTACT`
 
 A User may have only the relationships explicitly assigned to that identity.
 
