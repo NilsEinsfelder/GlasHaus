@@ -1,6 +1,7 @@
 """PostgreSQL integration tests for the Alembic migration workflow."""
 
 import os
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -10,6 +11,8 @@ from app.db.models import (
     Customer,
     CustomerType,
     Employment,
+    ExternalRelationship,
+    ExternalRelationshipType,
     Project,
     ProjectAssignment,
     User,
@@ -17,6 +20,7 @@ from app.db.models import (
     UserType,
 )
 from sqlalchemy import create_engine, inspect
+from sqlalchemy.dialects.postgresql import TIMESTAMP
 from sqlalchemy.orm import Session
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
@@ -58,6 +62,7 @@ def test_postgresql_migration_reaches_head() -> None:
             "customers",
             "projects",
             "project_assignments",
+            "external_relationships",
         }
     finally:
         engine.dispose()
@@ -153,5 +158,149 @@ def test_postgresql_migration_can_downgrade() -> None:
     engine = create_engine(database_url)
     try:
         assert inspect(engine).get_table_names() == ["alembic_version"]
+    finally:
+        engine.dispose()
+
+
+def test_postgresql_external_relationship_schema() -> None:
+    """PostgreSQL must create the external relationship schema correctly."""
+    database_url = _database_url()
+    config = _alembic_config(database_url)
+
+    command.upgrade(config, "head")
+
+    engine = create_engine(database_url)
+
+    try:
+        inspector = inspect(engine)
+
+        columns = {
+            column["name"]: column
+            for column in inspector.get_columns("external_relationships")
+        }
+
+        assert "created_from" in columns
+        assert columns["created_from"]["nullable"] is False
+
+        foreign_keys = inspector.get_foreign_keys(
+            "external_relationships",
+        )
+
+        created_from_foreign_key = next(
+            foreign_key
+            for foreign_key in foreign_keys
+            if foreign_key["constrained_columns"] == ["created_from"]
+        )
+
+        assert created_from_foreign_key["referred_table"] == "users"
+        assert created_from_foreign_key["referred_columns"] == ["id"]
+        assert created_from_foreign_key["options"]["ondelete"] == "RESTRICT"
+    finally:
+        engine.dispose()
+
+
+def test_postgresql_external_relationship_uses_timezone_aware_timestamps() -> None:
+    """ExternalRelationship timestamps must use PostgreSQL TIMESTAMP WITH TIME ZONE."""
+    database_url = _database_url()
+    config = _alembic_config(database_url)
+
+    command.upgrade(config, "head")
+
+    engine = create_engine(database_url)
+
+    try:
+        inspector = inspect(engine)
+
+        columns = {
+            column["name"]: column
+            for column in inspector.get_columns("external_relationships")
+        }
+
+        for column_name in (
+            "valid_from",
+            "valid_until",
+            "created_at",
+            "updated_at",
+        ):
+            column_type = columns[column_name]["type"]
+
+            assert isinstance(column_type, TIMESTAMP)
+            assert column_type.timezone is True
+    finally:
+        engine.dispose()
+
+
+def test_postgresql_external_relationship_utc_roundtrip() -> None:
+    """UTC-aware relationship timestamps must survive a PostgreSQL roundtrip."""
+    database_url = _database_url()
+    config = _alembic_config(database_url)
+
+    command.upgrade(config, "head")
+
+    engine = create_engine(database_url)
+
+    valid_from = datetime(
+        2026,
+        1,
+        1,
+        12,
+        30,
+        tzinfo=UTC,
+    )
+    valid_until = datetime(
+        2026,
+        12,
+        31,
+        18,
+        45,
+        tzinfo=UTC,
+    )
+
+    try:
+        with Session(engine) as session:
+            user = User(
+                login_identifier="postgres-external-relationship-user",
+                display_name="PostgreSQL External Relationship User",
+                user_type=UserType.INTERNAL,
+                role=UserRole.TECHNICIAN,
+            )
+            customer = Customer(
+                name="PostgreSQL External Relationship Customer",
+                customer_type=CustomerType.COMPANY,
+            )
+
+            session.add_all([user, customer])
+            session.flush()
+
+            relationship = ExternalRelationship(
+                user_id=user.id,
+                customer_id=customer.id,
+                relationship_type=ExternalRelationshipType.OWNER,
+                valid_from=valid_from,
+                valid_until=valid_until,
+                active=True,
+                created_from=user.id,
+            )
+
+            session.add(relationship)
+            session.commit()
+
+            relationship_id = relationship.id
+
+        with Session(engine) as session:
+            loaded = session.get(
+                ExternalRelationship,
+                relationship_id,
+            )
+
+            assert loaded is not None
+            assert loaded.valid_from == valid_from
+            assert loaded.valid_from.tzinfo is not None
+
+            assert loaded.valid_until == valid_until
+            assert loaded.valid_until.tzinfo is not None
+
+            assert loaded.created_at.tzinfo is not None
+            assert loaded.updated_at.tzinfo is not None
     finally:
         engine.dispose()
