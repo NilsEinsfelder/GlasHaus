@@ -207,10 +207,10 @@ Finished:
 3. Customer
 4. Project
 5. Project Assignment
+6. External Relationship
 
 To-Do:
 
-6. External Relationship
 7. Customer Project Access
 8. Workspace
 9. Permission model

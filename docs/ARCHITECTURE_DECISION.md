@@ -68,15 +68,7 @@ Accepted
 
 `Employment` repräsentiert ausschließlich den internen Beschäftigungs- und Hierarchiekontext eines Users.
 
-Es gibt daher keine Beziehung:
-
-```text
-User
- └── Employment
-      └── Customer
-```
-
-und insbesondere keinen direkten `customer_id`-Mechanismus auf `User` oder `Employment`.
+Es gibt insbesondere keinen direkten `customer_id`-Mechanismus auf `User` oder `Employment`.
 
 Die Beziehung zwischen einem externen User und einem Customer wird später ausschließlich über `ExternalRelationship` modelliert:
 
@@ -100,6 +92,20 @@ Project
  └── ProjectAssignment
       └── User
 ```
+
+#### ExternalRelationship created_from
+
+`ExternalRelationship.created_from` wird als Fremdschlüssel persistiert zu `users.id`.
+
+Die Persistenz garantert, dass der referenzierte Nutzer existiert.
+
+Die Anforderung, dass `created_from` einen Nutzer mit dem Typ
+`UserType.INTERNAL` voraussetzt ist eine authorization/business Regel und DARF NICHT
+allein als persistence-layer foreign-key constraint eingeführt werden.
+
+Die authorization layer MUSS validieren, dass der erstellenede Nutzer den Typ
+`INTERNAL` hat und zum Anlegen einer `ExternalRelationship` berechtigt ist, bevor diese
+erstellt wird.
 
 ### Begründung
 
