@@ -404,10 +404,9 @@ def test_postgresql_customer_project_access_uses_timezone_aware_timestamps() -> 
 
 
 def test_postgresql_customer_project_access_utc_roundtrip() -> None:
-    """UTC-aware customer project access timestamps must survive PostgreSQL."""
+    """Customer project access must persist the complete external customer access chain."""
     database_url = _database_url()
     config = _alembic_config(database_url)
-
     command.upgrade(config, "head")
 
     engine = create_engine(database_url)
@@ -431,7 +430,7 @@ def test_postgresql_customer_project_access_utc_roundtrip() -> None:
 
     try:
         with Session(engine) as session:
-            user = User(
+            internal_user = User(
                 login_identifier="postgres-customer-access-internal-user",
                 display_name="PostgreSQL Customer Access Internal User",
                 user_type=UserType.INTERNAL,
@@ -448,7 +447,24 @@ def test_postgresql_customer_project_access_utc_roundtrip() -> None:
                 customer_type=CustomerType.COMPANY,
             )
 
-            session.add_all([user, external_user, customer])
+            session.add_all(
+                [
+                    internal_user,
+                    external_user,
+                    customer,
+                ]
+            )
+            session.flush()
+
+            relationship = ExternalRelationship(
+                user_id=external_user.id,
+                customer_id=customer.id,
+                relationship_type=ExternalRelationshipType.OWNER,
+                valid_from=valid_from,
+                active=True,
+                created_from=internal_user.id,
+            )
+            session.add(relationship)
             session.flush()
 
             project = Project(
@@ -456,7 +472,6 @@ def test_postgresql_customer_project_access_utc_roundtrip() -> None:
                 name="PostgreSQL Customer Access Project",
                 status="ACTIVE",
             )
-
             session.add(project)
             session.flush()
 
@@ -466,33 +481,62 @@ def test_postgresql_customer_project_access_utc_roundtrip() -> None:
                 valid_from=valid_from,
                 valid_until=valid_until,
                 active=True,
-                created_from=user.id,
+                created_from=internal_user.id,
             )
-
             session.add(access)
-            session.commit()
+            session.flush()
 
+            internal_user_id = internal_user.id
+            external_user_id = external_user.id
+            customer_id = customer.id
+            relationship_id = relationship.id
+            project_id = project.id
             access_id = access.id
 
+            session.commit()
+
         with Session(engine) as session:
-            loaded = session.get(
+            loaded_relationship = session.get(
+                ExternalRelationship,
+                relationship_id,
+            )
+            loaded_project = session.get(
+                Project,
+                project_id,
+            )
+            loaded_access = session.get(
                 CustomerProjectAccess,
                 access_id,
             )
 
-            assert loaded is not None
-            assert loaded.project_id == project.id
-            assert loaded.user_id == external_user.id
-            assert loaded.created_from == user.id
-            assert loaded.active is True
+            assert loaded_relationship is not None
+            assert loaded_project is not None
+            assert loaded_access is not None
 
-            assert loaded.valid_from == valid_from
-            assert loaded.valid_from.tzinfo is not None
+            # The external user is assigned to the customer.
+            assert loaded_relationship.user_id == external_user_id
+            assert loaded_relationship.customer_id == customer_id
 
-            assert loaded.valid_until == valid_until
-            assert loaded.valid_until.tzinfo is not None
+            # The project belongs to the same customer.
+            assert loaded_project.customer_id == customer_id
 
-            assert loaded.created_at.tzinfo is not None
-            assert loaded.updated_at.tzinfo is not None
+            # The same external user has access to that project.
+            assert loaded_access.user_id == external_user_id
+            assert loaded_access.project_id == project_id
+
+            # The access timestamps survive the PostgreSQL roundtrip.
+            assert loaded_access.valid_from == valid_from
+            assert loaded_access.valid_from.tzinfo is not None
+
+            assert loaded_access.valid_until == valid_until
+            assert loaded_access.valid_until.tzinfo is not None
+
+            # The access is active and was created by the internal user.
+            assert loaded_access.active is True
+            assert loaded_access.created_from == internal_user_id
+
+            # Audit timestamps are timezone-aware.
+            assert loaded_access.created_at.tzinfo is not None
+            assert loaded_access.updated_at.tzinfo is not None
     finally:
         engine.dispose()
