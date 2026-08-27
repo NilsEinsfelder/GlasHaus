@@ -354,6 +354,34 @@ External relationships may receive dedicated workspaces in the future.
 
 Workspaces are security boundaries, not merely UI concepts.
 
+There are two different Pathways:
+
+                    PROJECT
+                       │
+          ┌────────────┴────────────┐
+          │                         │
+          ▼                         ▼
+ ProjectAssignment       CustomerProjectAccess
+          │                         │
+          ▼                         ▼
+ INTERNAL USER              EXTERNAL USER
+          │                         │
+          │                         │
+          ▼                         ▼
+  INTERNAL / CUSTOMER          CUSTOMER ONLY
+      Workspace                  Workspace
+          │                         │
+          └──────────┬──────────────┘
+                     ▼
+               AUTHORIZATION
+                     │
+                     ▼
+                Permission
+                     │
+                     ▼
+              ALLOW / DENY
+
+
 ### 10.1 Internal Workspace
 
 The Internal Workspace is available to authorized internal users.

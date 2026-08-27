@@ -25,29 +25,17 @@ If implementation requirements conflict with an architecture document, the confl
 GlasHaus follows these sequencing principles:
 
 1. Architecture precedes implementation.
-
 2. Persistence design precedes production domain implementation.
-
 3. Authentication precedes protected application workflows.
-
 4. Authorization is server-side from the first protected workflow onward.
-
 5. Security architecture precedes sensitive-data implementation.
-
 6. Cryptographic design precedes cryptographic implementation.
-
 7. A concrete domain workflow precedes generic abstractions.
-
 8. A concrete offline workflow precedes generic synchronization infrastructure.
-
 9. Tests are implemented together with the behavior they verify.
-
 10. Security guarantees are never claimed before implementation and testing demonstrate them.
-
 11. Each implementation phase should leave the repository runnable and testable.
-
 12. Future architecture must not be implemented speculatively without a concrete product requirement.
-
 13. Architectural invariants must remain consistent across all implementation phases.
 
 ---
@@ -77,6 +65,8 @@ The current repository contains foundational implementation work including:
     - Customer
     - Project
     - ProjectAssignment
+    - ExternalRelationship
+    - CustomerProjectAccess
 
 The target architecture now defines:
 
@@ -108,7 +98,7 @@ Phase 2 — Persistence Model is in progress.
     The first dependency-aware persistence slice is implemented:
         User, Employment, Customer, Project and ProjectAssignment.
 
-    The remaining Phase 2 entities are intentionally not yet implemented.
+    The remaining Phase 2 entities are being implemented step by step.
 
 ---
 
@@ -192,7 +182,7 @@ The backend foundation is reproducible, testable and suitable for the first prod
 
 ## 6. Phase 2 — Persistence Model
 
-Status: in progress — core persistence slice complete.
+Status: in progress.
 
 Goal:
 
