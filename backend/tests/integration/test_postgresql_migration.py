@@ -688,7 +688,6 @@ def test_postgresql_project_supports_both_workspace_types() -> None:
     """A PostgreSQL project must support one internal and one customer workspace."""
     database_url = _database_url()
     config = _alembic_config(database_url)
-
     command.upgrade(config, "head")
 
     engine = create_engine(database_url)
@@ -714,18 +713,22 @@ def test_postgresql_project_supports_both_workspace_types() -> None:
                 name="PostgreSQL Workspace Types Project",
                 status="ACTIVE",
             )
+
             session.add(project)
             session.flush()
 
+            project_id = project.id
+            user_id = user.id
+
             internal_workspace = Workspace(
-                project_id=project.id,
+                project_id=project_id,
                 workspace_type=WorkspaceType.INTERNAL,
-                created_from=user.id,
+                created_from=user_id,
             )
             customer_workspace = Workspace(
-                project_id=project.id,
+                project_id=project_id,
                 workspace_type=WorkspaceType.CUSTOMER,
-                created_from=user.id,
+                created_from=user_id,
             )
 
             session.add_all(
@@ -752,8 +755,11 @@ def test_postgresql_project_supports_both_workspace_types() -> None:
             assert loaded_internal is not None
             assert loaded_customer is not None
 
-            assert loaded_internal.project_id == project.id
-            assert loaded_customer.project_id == project.id
+            assert loaded_internal.project_id == project_id
+            assert loaded_customer.project_id == project_id
+
+            assert loaded_internal.created_from == user_id
+            assert loaded_customer.created_from == user_id
 
             assert loaded_internal.workspace_type is WorkspaceType.INTERNAL
             assert loaded_customer.workspace_type is WorkspaceType.CUSTOMER
