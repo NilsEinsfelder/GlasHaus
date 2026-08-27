@@ -72,26 +72,26 @@ Es gibt insbesondere keinen direkten `customer_id`-Mechanismus auf `User` oder `
 
 Die Beziehung zwischen einem externen User und einem Customer wird später ausschließlich über `ExternalRelationship` modelliert:
 
-```text
+
 User
  └── ExternalRelationship
       └── Customer
-```
+
 
 Die Zuordnung eines Projects zu einem Customer erfolgt separat:
 
-```text
+
 Customer
  └── Project
-```
+
 
 Interner Project-Zugriff wird wiederum separat über `ProjectAssignment` dargestellt:
 
-```text
+
 Project
  └── ProjectAssignment
       └── User
-```
+
 
 #### ExternalRelationship created_from
 
@@ -181,7 +181,7 @@ Sprint B implementiert keine Authentication und keine Authorization Engine.
 
 Die Reihenfolge bleibt:
 
-```text
+
 Core Persistence
       ↓
 Authentication
@@ -193,13 +193,13 @@ First Domain Workflow
 Browser / Mobile Foundation
       ↓
 Synchronization MVP
-```
+
 
 API-Routen dürfen später nicht als Ersatz für Authentication oder Authorization dienen.
 
 Insbesondere gilt:
 
-```text
+
 Foreign Key
 ≠ Authorization
 
@@ -208,7 +208,7 @@ ProjectAssignment
 
 ExternalRelationship
 ≠ vollständige Permission
-```
+
 
 ### Begründung
 
@@ -216,16 +216,16 @@ Persistence stellt strukturelle Beziehungen und Datenintegrität sicher.
 
 Authentication beantwortet:
 
-```text
+
 Wer ist der Benutzer?
-```
+
 
 Authorization beantwortet:
 
-```text
+
 Darf dieser Benutzer diese konkrete Aktion
 auf diese konkrete Ressource in diesem Kontext ausführen?
-```
+
 
 Diese Verantwortlichkeiten müssen getrennt bleiben.
 
@@ -260,7 +260,7 @@ Sie dürfen nicht:
 
 Die spätere Architektur bleibt:
 
-```text
+
 API
  ↓
 Application / Service
@@ -270,7 +270,7 @@ Repository
 SQLAlchemy
  ↓
 Database
-```
+
 
 ### Begründung
 

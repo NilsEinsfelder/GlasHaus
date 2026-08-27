@@ -203,8 +203,8 @@ Finished:
 
 To-Do:
 
-9. Permission model
-10. Permission Grant
+9. Permission model <!-- PERSISTENCE_MODEL.md ## 10. -->
+10. Permission Grant <!-- PERSISTENCE_MODEL.md ## 11. -->
 11. Device integration
 12. Session persistence foundation
 13. Audit Event

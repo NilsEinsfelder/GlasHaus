@@ -160,24 +160,24 @@ An external User's business relationship is separate from the User's identity.
 
 The model is:
 
-```text
+
 User
   |
   +-- ExternalRelationship --> Customer
   |
   +-- CustomerProjectAccess --> Project
-```
+
 
 An `ExternalRelationship` describes the business relationship between an external User and a Customer.
 
 Examples include:
 
-```text
+
 CUSTOMER
 SUPPLIER
 TAX_ADVISOR
 PARTNER
-```
+
 
 The relationship does not by itself grant access to every resource of the related Customer.
 
@@ -372,10 +372,10 @@ The MVP uses the following canonical permission identifiers.
 
 ### Customer
 
-```text
+
 customer.read
 customer.write
-```
+
 
 `customer.read` allows reading customer information.
 
@@ -383,11 +383,11 @@ customer.write
 
 ### Project
 
-```text
+
 project.read
 project.write
 project.coordinate
-```
+
 
 `project.read` allows reading project information.
 
@@ -397,10 +397,10 @@ project.coordinate
 
 ### Purchasing
 
-```text
+
 purchase.create
 purchase.grant
-```
+
 
 `purchase.create` allows creating purchases within the authorized scope.
 
@@ -410,11 +410,11 @@ A purchase permission is not inherently limited to a project. The applicable sco
 
 ### Documents
 
-```text
+
 document.read
 document.write
 document.sign
-```
+
 
 `document.read` allows reading documents within the authorized scope.
 
@@ -424,13 +424,13 @@ document.sign
 
 ### Scheduling
 
-```text
+
 schedule.view_availability
 schedule.view_details
 schedule.assignment_write
 schedule.assignment_request
 schedule.assignment_grant
-```
+
 
 `schedule.view_availability` allows viewing scheduling availability without necessarily exposing the reason for an existing assignment.
 
@@ -444,10 +444,10 @@ schedule.assignment_grant
 
 ### User and Permission Management
 
-```text
+
 user.manage
 permission.manage
-```
+
 
 `user.manage` allows managing users and their organizational authorization context within the authorized scope.
 
@@ -459,7 +459,7 @@ permission.manage
 
 The following identifiers are the complete canonical Permission set for the MVP:
 
-```text
+
 customer.read
 customer.write
 
@@ -482,7 +482,7 @@ schedule.assignment_grant
 
 user.manage
 permission.manage
-```
+
 
 No additional Permission identifiers are part of the MVP unless explicitly added to this catalogue through an architecture decision.
 
@@ -496,7 +496,7 @@ Effective authorization is determined from multiple independent dimensions.
 
 The general model is:
 
-```text
+
 Effective Authorization =
     Role Defaults
     + Role/Hierarchy Defaults
@@ -506,7 +506,7 @@ Effective Authorization =
     Scope
     Policy Constraints
     Delegation Constraints
-```
+
 
 A Permission alone does not grant unrestricted access.
 
@@ -516,10 +516,10 @@ An explicit grant may assign a Permission to a principal for a defined scope.
 
 For example:
 
-```text
+
 permission = purchase.create
 scope      = PROJECT:123
-```
+
 
 This means that the principal may create purchases for Project `123`, provided all other authorization requirements are satisfied.
 
@@ -537,29 +537,29 @@ A Permission must not encode a specific resource scope in its identifier.
 
 For example, the canonical Permission is:
 
-```text
+
 purchase.create
-```
+
 
 not:
 
-```text
+
 project.purchase_create
-```
+
 
 The scope determines where the Permission applies:
 
-```text
+
 purchase.create
 scope = PROJECT:123
-```
+
 
 or, where supported:
 
-```text
+
 purchase.create
 scope = ORGANIZATION
-```
+
 
 The same principle applies to documents, projects, scheduling, users, and other resource domains.
 
@@ -571,12 +571,12 @@ A constraint is not itself a Permission.
 
 For example, purchasing may use a financial limit:
 
-```text
+
 permission = purchase.create
 scope      = PROJECT:123
 constraint:
     purchase_limit = 2000 EUR
-```
+
 
 `purchase_limit` is therefore a constraint on `purchase.create`, not a separate Permission such as `purchase.limit`.
 
@@ -601,21 +601,21 @@ Delegation must therefore be constrained by:
 
 For example, a principal with:
 
-```text
+
 permission = purchase.create
 scope      = PROJECT:123
 constraint:
     purchase_limit = 2000 EUR
-```
+
 
 must not be able to delegate:
 
-```text
+
 permission = purchase.create
 scope      = PROJECT:123
 constraint:
     purchase_limit = None
-```
+
 
 unless the principal independently possesses sufficient authority to delegate that broader purchasing capability.
 
