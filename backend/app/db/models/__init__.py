@@ -11,6 +11,7 @@ from app.db.models.project import Project
 from app.db.models.project_assignment import ProjectAssignment
 from app.db.models.sync_state import SyncState, SyncStatus
 from app.db.models.user import User, UserRole, UserType
+from app.db.models.workspace import Workspace, WorkspaceType
 
 __all__ = [
     "Base",
@@ -30,5 +31,7 @@ __all__ = [
     "User",
     "UserRole",
     "UserType",
+    "Workspace",
+    "WorkspaceType",
     "utc_now",
 ]

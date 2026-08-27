@@ -24,6 +24,7 @@ def test_initialize_database_creates_all_registered_tables() -> None:
             "project_assignments",
             "external_relationships",
             "customer_project_accesses",
+            "workspaces",
         }
     finally:
         engine.dispose()

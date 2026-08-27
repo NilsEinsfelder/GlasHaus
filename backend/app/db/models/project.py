@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from app.db.models.customer import Customer
     from app.db.models.customer_project_access import CustomerProjectAccess
     from app.db.models.project_assignment import ProjectAssignment
+    from app.db.models.workspace import Workspace
 
 
 class Project(Base, TimestampMixin):
@@ -75,6 +76,11 @@ class Project(Base, TimestampMixin):
     )
 
     customer_project_accesses: Mapped[list[CustomerProjectAccess]] = relationship(
+        back_populates="project",
+        passive_deletes=True,
+    )
+
+    workspaces: Mapped[list[Workspace]] = relationship(
         back_populates="project",
         passive_deletes=True,
     )

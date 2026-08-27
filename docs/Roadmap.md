@@ -199,10 +199,10 @@ Finished:
 5. Project Assignment
 6. External Relationship
 7. Customer Project Access
+8. Workspace
 
 To-Do:
 
-8. Workspace
 9. Permission model
 10. Permission Grant
 11. Device integration
@@ -388,6 +388,11 @@ Initial direction:
     Document
 
 The exact first workflow may be refined based on product priority.
+
+Details: 
+
+- [ ] Project creation workflow
+    - [ ] Project creation atomically creates exactly one Internal Workspace and one Customer Workspace
 
 Every production domain entity must define:
 

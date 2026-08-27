@@ -1,11 +1,19 @@
 """Tests for database repositories."""
 
-from app.db.models import Customer, Project, ProjectAssignment, User
+from app.db.models import (
+    Customer,
+    Project,
+    ProjectAssignment,
+    User,
+    Workspace,
+    WorkspaceType,
+)
 from app.db.repositories import (
     CustomerRepository,
     ProjectAssignmentRepository,
     ProjectRepository,
     UserRepository,
+    WorkspaceRepository,
 )
 from sqlalchemy.orm import Session
 
@@ -124,3 +132,83 @@ def test_repositories_deactivate_without_deleting(
     assert db_session.get(Customer, customer.id).active is False
     assert db_session.get(Project, project.id).active is False
     assert db_session.get(ProjectAssignment, assignment.id).active is False
+
+
+def test_workspace_repository_get(
+    db_session: Session,
+    user: User,
+    project,
+) -> None:
+    """WorkspaceRepository.get must return the requested workspace."""
+    workspace = Workspace(
+        project_id=project.id,
+        workspace_type=WorkspaceType.INTERNAL,
+        created_from=user.id,
+    )
+    db_session.add(workspace)
+    db_session.commit()
+
+    repository = WorkspaceRepository(db_session)
+
+    result = repository.get(workspace.id)
+
+    assert result is workspace
+
+
+def test_workspace_repository_get_for_project(
+    db_session: Session,
+    user: User,
+    project,
+) -> None:
+    """WorkspaceRepository must find a project workspace by type."""
+    workspace = Workspace(
+        project_id=project.id,
+        workspace_type=WorkspaceType.CUSTOMER,
+        created_from=user.id,
+    )
+    db_session.add(workspace)
+    db_session.commit()
+
+    repository = WorkspaceRepository(db_session)
+
+    result = repository.get_for_project(
+        project.id,
+        WorkspaceType.CUSTOMER,
+    )
+
+    assert result is workspace
+
+
+def test_workspace_repository_list_for_project(
+    db_session: Session,
+    user: User,
+    project,
+) -> None:
+    """WorkspaceRepository must list all workspaces of a project."""
+    internal_workspace = Workspace(
+        project_id=project.id,
+        workspace_type=WorkspaceType.INTERNAL,
+        created_from=user.id,
+    )
+    customer_workspace = Workspace(
+        project_id=project.id,
+        workspace_type=WorkspaceType.CUSTOMER,
+        created_from=user.id,
+    )
+
+    db_session.add_all(
+        [
+            internal_workspace,
+            customer_workspace,
+        ],
+    )
+    db_session.commit()
+
+    repository = WorkspaceRepository(db_session)
+
+    result = repository.list_for_project(project.id)
+
+    assert set(result) == {
+        internal_workspace,
+        customer_workspace,
+    }

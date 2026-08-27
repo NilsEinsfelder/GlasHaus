@@ -318,14 +318,13 @@ Business relationships are represented separately from human identity.
 
 Conceptually:
 
-    User
-    └── External
-          │
-          └── Business Relationship
-                │
-                └── Customer
-                      │
-                      └── Projects
+    external_user
+     │
+     ├── ExternalRelationship ──────► customer
+     │                                  │
+     │                                  └──► project
+     │                                         │
+     └── CustomerProjectAccess ────────────────┘
 
 Multiple external users may belong to the same Customer.
 
@@ -345,8 +344,6 @@ The same separation should be used for future relationships such as:
 - tax advisors
 - partners
 - other external organizations
-
-External relationships may receive dedicated workspaces in the future.
 
 ---
 

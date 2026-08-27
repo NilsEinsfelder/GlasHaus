@@ -19,6 +19,8 @@ from app.db.models import (
     User,
     UserRole,
     UserType,
+    Workspace,
+    WorkspaceType,
 )
 from sqlalchemy import create_engine, inspect
 from sqlalchemy.dialects.postgresql import TIMESTAMP
@@ -65,6 +67,7 @@ def test_postgresql_migration_reaches_head() -> None:
             "project_assignments",
             "external_relationships",
             "customer_project_accesses",
+            "workspaces",
         }
     finally:
         engine.dispose()
@@ -372,6 +375,58 @@ def test_postgresql_customer_project_access_schema() -> None:
         engine.dispose()
 
 
+def test_postgresql_workspace_schema() -> None:
+    """PostgreSQL must create the workspace schema correctly."""
+    database_url = _database_url()
+    config = _alembic_config(database_url)
+
+    command.upgrade(config, "head")
+
+    engine = create_engine(database_url)
+
+    try:
+        inspector = inspect(engine)
+
+        columns = {
+            column["name"]: column for column in inspector.get_columns("workspaces")
+        }
+
+        assert set(columns) == {
+            "id",
+            "project_id",
+            "workspace_type",
+            "created_from",
+            "created_at",
+            "updated_at",
+        }
+
+        assert columns["id"]["nullable"] is False
+        assert columns["project_id"]["nullable"] is False
+        assert columns["workspace_type"]["nullable"] is False
+        assert columns["created_from"]["nullable"] is False
+        assert columns["created_at"]["nullable"] is False
+        assert columns["updated_at"]["nullable"] is False
+
+        foreign_keys = inspector.get_foreign_keys("workspaces")
+
+        foreign_key_map = {
+            tuple(foreign_key["constrained_columns"]): foreign_key
+            for foreign_key in foreign_keys
+        }
+
+        project_foreign_key = foreign_key_map[("project_id",)]
+        assert project_foreign_key["referred_table"] == "projects"
+        assert project_foreign_key["referred_columns"] == ["id"]
+        assert project_foreign_key["options"]["ondelete"] == "RESTRICT"
+
+        created_from_foreign_key = foreign_key_map[("created_from",)]
+        assert created_from_foreign_key["referred_table"] == "users"
+        assert created_from_foreign_key["referred_columns"] == ["id"]
+        assert created_from_foreign_key["options"]["ondelete"] == "RESTRICT"
+    finally:
+        engine.dispose()
+
+
 def test_postgresql_customer_project_access_uses_timezone_aware_timestamps() -> None:
     """CustomerProjectAccess timestamps must use PostgreSQL TIMESTAMP WITH TIME ZONE."""
     database_url = _database_url()
@@ -392,6 +447,34 @@ def test_postgresql_customer_project_access_uses_timezone_aware_timestamps() -> 
         for column_name in (
             "valid_from",
             "valid_until",
+            "created_at",
+            "updated_at",
+        ):
+            column_type = columns[column_name]["type"]
+
+            assert isinstance(column_type, TIMESTAMP)
+            assert column_type.timezone is True
+    finally:
+        engine.dispose()
+
+
+def test_postgresql_workspace_uses_timezone_aware_timestamps() -> None:
+    """Workspace timestamps must use PostgreSQL TIMESTAMP WITH TIME ZONE."""
+    database_url = _database_url()
+    config = _alembic_config(database_url)
+
+    command.upgrade(config, "head")
+
+    engine = create_engine(database_url)
+
+    try:
+        inspector = inspect(engine)
+
+        columns = {
+            column["name"]: column for column in inspector.get_columns("workspaces")
+        }
+
+        for column_name in (
             "created_at",
             "updated_at",
         ):
@@ -538,5 +621,141 @@ def test_postgresql_customer_project_access_utc_roundtrip() -> None:
             # Audit timestamps are timezone-aware.
             assert loaded_access.created_at.tzinfo is not None
             assert loaded_access.updated_at.tzinfo is not None
+    finally:
+        engine.dispose()
+
+
+def test_postgresql_workspace_utc_roundtrip() -> None:
+    """Workspace audit timestamps must survive a PostgreSQL UTC roundtrip."""
+    database_url = _database_url()
+    config = _alembic_config(database_url)
+
+    command.upgrade(config, "head")
+
+    engine = create_engine(database_url)
+
+    try:
+        with Session(engine) as session:
+            user = User(
+                login_identifier="postgres-workspace-user",
+                display_name="PostgreSQL Workspace User",
+                user_type=UserType.INTERNAL,
+                role=UserRole.TECHNICIAN,
+            )
+            customer = Customer(
+                name="PostgreSQL Workspace Customer",
+                customer_type=CustomerType.COMPANY,
+            )
+
+            session.add_all([user, customer])
+            session.flush()
+
+            project = Project(
+                customer_id=customer.id,
+                name="PostgreSQL Workspace Project",
+                status="ACTIVE",
+            )
+
+            session.add(project)
+            session.flush()
+
+            workspace = Workspace(
+                project_id=project.id,
+                workspace_type=WorkspaceType.INTERNAL,
+                created_from=user.id,
+            )
+
+            session.add(workspace)
+            session.commit()
+
+            workspace_id = workspace.id
+
+        with Session(engine) as session:
+            loaded = session.get(Workspace, workspace_id)
+
+            assert loaded is not None
+            assert loaded.workspace_type is WorkspaceType.INTERNAL
+
+            assert loaded.created_at.tzinfo is not None
+            assert loaded.updated_at.tzinfo is not None
+
+            assert loaded.created_at <= loaded.updated_at
+    finally:
+        engine.dispose()
+
+
+def test_postgresql_project_supports_both_workspace_types() -> None:
+    """A PostgreSQL project must support one internal and one customer workspace."""
+    database_url = _database_url()
+    config = _alembic_config(database_url)
+
+    command.upgrade(config, "head")
+
+    engine = create_engine(database_url)
+
+    try:
+        with Session(engine) as session:
+            user = User(
+                login_identifier="postgres-workspace-types-user",
+                display_name="PostgreSQL Workspace Types User",
+                user_type=UserType.INTERNAL,
+                role=UserRole.TECHNICIAN,
+            )
+            customer = Customer(
+                name="PostgreSQL Workspace Types Customer",
+                customer_type=CustomerType.COMPANY,
+            )
+
+            session.add_all([user, customer])
+            session.flush()
+
+            project = Project(
+                customer_id=customer.id,
+                name="PostgreSQL Workspace Types Project",
+                status="ACTIVE",
+            )
+            session.add(project)
+            session.flush()
+
+            internal_workspace = Workspace(
+                project_id=project.id,
+                workspace_type=WorkspaceType.INTERNAL,
+                created_from=user.id,
+            )
+            customer_workspace = Workspace(
+                project_id=project.id,
+                workspace_type=WorkspaceType.CUSTOMER,
+                created_from=user.id,
+            )
+
+            session.add_all(
+                [
+                    internal_workspace,
+                    customer_workspace,
+                ]
+            )
+            session.commit()
+
+            internal_workspace_id = internal_workspace.id
+            customer_workspace_id = customer_workspace.id
+
+        with Session(engine) as session:
+            loaded_internal = session.get(
+                Workspace,
+                internal_workspace_id,
+            )
+            loaded_customer = session.get(
+                Workspace,
+                customer_workspace_id,
+            )
+
+            assert loaded_internal is not None
+            assert loaded_customer is not None
+
+            assert loaded_internal.project_id == project.id
+            assert loaded_customer.project_id == project.id
+
+            assert loaded_internal.workspace_type is WorkspaceType.INTERNAL
+            assert loaded_customer.workspace_type is WorkspaceType.CUSTOMER
     finally:
         engine.dispose()

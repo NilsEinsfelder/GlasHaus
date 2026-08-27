@@ -48,6 +48,7 @@ def test_upgrade_to_head_creates_domain_schema(
             "project_assignments",
             "external_relationships",
             "customer_project_accesses",
+            "workspaces",
         } <= tables
 
     finally:
@@ -124,6 +125,62 @@ def test_customer_project_access_migration_roundtrip(
 
         inspector = inspect(engine)
         assert "customer_project_accesses" not in inspector.get_table_names()
+
+    finally:
+        engine.dispose()
+
+
+def test_workspace_migration_roundtrip(
+    tmp_path: Path,
+) -> None:
+    """Workspace migration must upgrade and downgrade cleanly."""
+    database_path = tmp_path / "workspace.db"
+    database_url = f"sqlite:///{database_path}"
+
+    engine = create_engine(database_url)
+
+    try:
+        config = _alembic_config(database_url)
+
+        command.upgrade(config, "head")
+
+        inspector = inspect(engine)
+
+        assert "workspaces" in inspector.get_table_names()
+
+        columns = {column["name"] for column in inspector.get_columns("workspaces")}
+
+        assert columns == {
+            "id",
+            "project_id",
+            "workspace_type",
+            "created_from",
+            "created_at",
+            "updated_at",
+        }
+
+        indexes = {index["name"] for index in inspector.get_indexes("workspaces")}
+
+        assert {
+            "ix_workspaces_project_id",
+            "ix_workspaces_created_from",
+        } <= indexes
+
+        unique_constraints = {
+            constraint["name"]
+            for constraint in inspector.get_unique_constraints("workspaces")
+        }
+
+        assert "uq_workspaces_project_type" in unique_constraints
+
+        command.downgrade(
+            config,
+            "0004_customer_project_access",
+        )
+
+        inspector = inspect(engine)
+
+        assert "workspaces" not in inspector.get_table_names()
 
     finally:
         engine.dispose()
