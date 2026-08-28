@@ -14,6 +14,7 @@ from app.db.models import (
     Employment,
     ExternalRelationship,
     ExternalRelationshipType,
+    Permission,
     Project,
     ProjectAssignment,
     User,
@@ -22,7 +23,7 @@ from app.db.models import (
     Workspace,
     WorkspaceType,
 )
-from sqlalchemy import create_engine, inspect
+from sqlalchemy import create_engine, inspect, select
 from sqlalchemy.dialects.postgresql import TIMESTAMP
 from sqlalchemy.orm import Session
 
@@ -763,5 +764,111 @@ def test_postgresql_project_supports_both_workspace_types() -> None:
 
             assert loaded_internal.workspace_type is WorkspaceType.INTERNAL
             assert loaded_customer.workspace_type is WorkspaceType.CUSTOMER
+    finally:
+        engine.dispose()
+
+
+def test_postgresql_permission_schema() -> None:
+    """PostgreSQL must create the Permission schema correctly."""
+    database_url = _database_url()
+    config = _alembic_config(database_url)
+
+    command.upgrade(config, "head")
+
+    engine = create_engine(database_url)
+
+    try:
+        inspector = inspect(engine)
+
+        columns = {
+            column["name"]: column for column in inspector.get_columns("permissions")
+        }
+
+        assert set(columns) == {"id", "identifier"}
+        assert columns["id"]["nullable"] is False
+        assert columns["identifier"]["nullable"] is False
+
+        primary_key = inspector.get_pk_constraint("permissions")
+        assert primary_key["constrained_columns"] == ["id"]
+
+        unique_constraints = inspector.get_unique_constraints(
+            "permissions",
+        )
+
+        assert any(
+            constraint["name"] == "uq_permissions_identifier"
+            and constraint["column_names"] == ["identifier"]
+            for constraint in unique_constraints
+        )
+    finally:
+        engine.dispose()
+
+
+def test_postgresql_permission_catalog_is_seeded() -> None:
+    """PostgreSQL must contain the complete canonical MVP catalogue."""
+    database_url = _database_url()
+    config = _alembic_config(database_url)
+
+    command.upgrade(config, "head")
+
+    engine = create_engine(database_url)
+
+    try:
+        with Session(engine) as session:
+            identifiers = set(
+                session.scalars(
+                    select(Permission.identifier),
+                ).all(),
+            )
+
+        assert identifiers == {
+            "customer.read",
+            "customer.write",
+            "project.read",
+            "project.write",
+            "project.coordinate",
+            "purchase.create",
+            "purchase.grant",
+            "document.read",
+            "document.write",
+            "document.sign",
+            "schedule.view_availability",
+            "schedule.view_details",
+            "schedule.assignment_write",
+            "schedule.assignment_request",
+            "schedule.assignment_grant",
+            "user.manage",
+            "permission.manage",
+        }
+    finally:
+        engine.dispose()
+
+
+def test_postgresql_permission_roundtrip() -> None:
+    """A Permission must survive a PostgreSQL session roundtrip."""
+    database_url = _database_url()
+    config = _alembic_config(database_url)
+
+    command.upgrade(config, "head")
+
+    engine = create_engine(database_url)
+
+    try:
+        with Session(engine) as session:
+            permission = Permission(
+                identifier="test.permission.roundtrip",
+            )
+
+            session.add(permission)
+            session.commit()
+
+            permission_id = permission.id
+
+        with Session(engine) as session:
+            loaded = session.get(Permission, permission_id)
+
+            assert loaded is not None
+            assert loaded.id == permission_id
+            assert loaded.identifier == "test.permission.roundtrip"
     finally:
         engine.dispose()

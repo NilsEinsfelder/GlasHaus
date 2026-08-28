@@ -22,6 +22,7 @@ FULL_SCHEMA_TABLES = {
     "users",
     "employments",
     "customers",
+    "permissions",
     "projects",
     "project_assignments",
     "external_relationships",

@@ -7,6 +7,7 @@ from app.db.models.external_relationship import (
     ExternalRelationship,
     ExternalRelationshipType,
 )
+from app.db.models.permission import Permission
 from app.db.models.project import Project
 from app.db.models.project_assignment import ProjectAssignment
 from app.db.models.sync_state import SyncState, SyncStatus
@@ -23,6 +24,7 @@ __all__ = [
     "Employment",
     "ExternalRelationship",
     "ExternalRelationshipType",
+    "Permission",
     "Project",
     "ProjectAssignment",
     "SyncState",

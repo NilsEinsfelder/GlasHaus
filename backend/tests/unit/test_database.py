@@ -20,6 +20,7 @@ def test_initialize_database_creates_all_registered_tables() -> None:
             "users",
             "employments",
             "customers",
+            "permissions",
             "projects",
             "project_assignments",
             "external_relationships",
