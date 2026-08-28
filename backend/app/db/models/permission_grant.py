@@ -73,11 +73,14 @@ class PermissionGrant(Base, TimestampMixin):
         ),
         CheckConstraint(
             """
-            CASE
-                WHEN constraint_type IS NULL AND constraint_value IS NULL THEN 1
-                WHEN constraint_type = 'purchase_limit' THEN 1
-                ELSE 0
-            END
+            (
+                constraint_type IS NULL
+                AND constraint_value IS NULL
+            )
+            OR (
+                constraint_type IS NOT NULL
+                AND constraint_type = 'purchase_limit'
+            )
             """,
             name="ck_permission_grants_constraint_consistency",
         ),
