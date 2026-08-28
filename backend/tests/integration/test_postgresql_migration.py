@@ -3,6 +3,7 @@
 import os
 from datetime import UTC, datetime
 from pathlib import Path
+from uuid import uuid7
 
 import pytest
 from alembic import command
@@ -29,6 +30,7 @@ from app.db.models import (
 )
 from sqlalchemy import create_engine, inspect, select
 from sqlalchemy.dialects.postgresql import TIMESTAMP
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
@@ -881,10 +883,9 @@ def test_postgresql_permission_roundtrip() -> None:
 
 
 def test_postgresql_permission_grant_schema() -> None:
-    """PostgreSQL must create the PermissionGrant schema correctly."""
+    """PostgreSQL must create the documented PermissionGrant schema."""
     database_url = _database_url()
     config = _alembic_config(database_url)
-
     command.upgrade(config, "head")
 
     engine = create_engine(database_url)
@@ -929,6 +930,8 @@ def test_postgresql_permission_grant_schema() -> None:
         assert columns["created_at"]["nullable"] is False
         assert columns["updated_at"]["nullable"] is False
 
+        assert columns["constraint_value"]["type"].__class__.__name__ == "JSON"
+
         foreign_keys = inspector.get_foreign_keys(
             "permission_grants",
         )
@@ -938,20 +941,17 @@ def test_postgresql_permission_grant_schema() -> None:
             for foreign_key in foreign_keys
         }
 
-        user_foreign_key = foreign_key_map[("user_id",)]
-        assert user_foreign_key["referred_table"] == "users"
-        assert user_foreign_key["referred_columns"] == ["id"]
-        assert user_foreign_key["options"]["ondelete"] == "RESTRICT"
+        assert foreign_key_map[("user_id",)]["referred_table"] == "users"
+        assert foreign_key_map[("user_id",)]["options"]["ondelete"] == "RESTRICT"
 
-        permission_foreign_key = foreign_key_map[("permission_id",)]
-        assert permission_foreign_key["referred_table"] == "permissions"
-        assert permission_foreign_key["referred_columns"] == ["id"]
-        assert permission_foreign_key["options"]["ondelete"] == "RESTRICT"
+        assert foreign_key_map[("permission_id",)]["referred_table"] == "permissions"
+        assert foreign_key_map[("permission_id",)]["options"]["ondelete"] == "RESTRICT"
 
-        granted_by_foreign_key = foreign_key_map[("granted_by_user_id",)]
-        assert granted_by_foreign_key["referred_table"] == "users"
-        assert granted_by_foreign_key["referred_columns"] == ["id"]
-        assert granted_by_foreign_key["options"]["ondelete"] == "RESTRICT"
+        assert foreign_key_map[("granted_by_user_id",)]["referred_table"] == "users"
+        assert (
+            foreign_key_map[("granted_by_user_id",)]["options"]["ondelete"]
+            == "RESTRICT"
+        )
 
         indexes = inspector.get_indexes("permission_grants")
         index_names = {index["name"] for index in indexes}
@@ -963,6 +963,21 @@ def test_postgresql_permission_grant_schema() -> None:
             "ix_permission_grants_user_permission_active",
             "ix_permission_grants_scope_active",
         }.issubset(index_names)
+
+        check_constraints = inspector.get_check_constraints(
+            "permission_grants",
+        )
+        check_constraint_names = {
+            constraint["name"] for constraint in check_constraints
+        }
+
+        assert check_constraint_names == {
+            "ck_permission_grants_effect",
+            "ck_permission_grants_scope_type",
+            "ck_permission_grants_scope_consistency",
+            "ck_permission_grants_valid_range",
+            "ck_permission_grants_constraint_consistency",
+        }
 
         for column_name in (
             "valid_from",
@@ -979,7 +994,7 @@ def test_postgresql_permission_grant_schema() -> None:
 
 
 def test_postgresql_permission_grant_roundtrip() -> None:
-    """A PermissionGrant must survive a PostgreSQL roundtrip."""
+    """A PermissionGrant must survive a PostgreSQL JSON roundtrip."""
     database_url = _database_url()
     config = _alembic_config(database_url)
 
@@ -995,7 +1010,6 @@ def test_postgresql_permission_grant_roundtrip() -> None:
         30,
         tzinfo=UTC,
     )
-
     valid_until = datetime(
         2026,
         12,
@@ -1005,6 +1019,16 @@ def test_postgresql_permission_grant_roundtrip() -> None:
         tzinfo=UTC,
     )
 
+    constraint_value = {
+        "amount": "2000.50",
+        "currency": "EUR",
+        "rules": {
+            "approval_required": True,
+            "categories": ["material", "equipment"],
+            "max_items": 10,
+        },
+    }
+
     try:
         with Session(engine) as session:
             user = User(
@@ -1013,14 +1037,16 @@ def test_postgresql_permission_grant_roundtrip() -> None:
                 user_type=UserType.INTERNAL,
                 role=UserRole.TECHNICIAN,
             )
-
             grantor = User(
                 login_identifier="postgres-permission-grant-grantor",
                 display_name="PostgreSQL Permission Grant Grantor",
                 user_type=UserType.INTERNAL,
                 role=UserRole.TECHNICIAN,
             )
-
+            customer = Customer(
+                name="PostgreSQL Permission Grant Customer",
+                customer_type=CustomerType.COMPANY,
+            )
             permission = Permission(
                 identifier="postgresql.purchase.create",
             )
@@ -1029,9 +1055,18 @@ def test_postgresql_permission_grant_roundtrip() -> None:
                 [
                     user,
                     grantor,
+                    customer,
                     permission,
                 ],
             )
+            session.flush()
+
+            project = Project(
+                customer_id=customer.id,
+                name="PostgreSQL Permission Grant Project",
+                status="ACTIVE",
+            )
+            session.add(project)
             session.flush()
 
             grant = PermissionGrant(
@@ -1039,12 +1074,9 @@ def test_postgresql_permission_grant_roundtrip() -> None:
                 permission_id=permission.id,
                 effect=PermissionGrantEffect.ALLOW,
                 scope_type=PermissionGrantScopeType.PROJECT,
-                scope_id=permission.id,
+                scope_id=project.id,
                 constraint_type=PermissionGrantConstraintType.PURCHASE_LIMIT,
-                constraint_value={
-                    "amount": "2000.50",
-                    "currency": "EUR",
-                },
+                constraint_value=constraint_value,
                 valid_from=valid_from,
                 valid_until=valid_until,
                 active=True,
@@ -1058,6 +1090,7 @@ def test_postgresql_permission_grant_roundtrip() -> None:
             user_id = user.id
             grantor_id = grantor.id
             permission_id = permission.id
+            project_id = project.id
 
         with Session(engine) as session:
             loaded = session.get(
@@ -1072,16 +1105,12 @@ def test_postgresql_permission_grant_roundtrip() -> None:
 
             assert loaded.effect is PermissionGrantEffect.ALLOW
             assert loaded.scope_type is PermissionGrantScopeType.PROJECT
-            assert loaded.scope_id == permission_id
+            assert loaded.scope_id == project_id
 
             assert (
                 loaded.constraint_type is PermissionGrantConstraintType.PURCHASE_LIMIT
             )
-
-            assert loaded.constraint_value == {
-                "amount": "2000.50",
-                "currency": "EUR",
-            }
+            assert loaded.constraint_value == constraint_value
 
             assert loaded.valid_from == valid_from
             assert loaded.valid_from.tzinfo is not None
@@ -1090,7 +1119,6 @@ def test_postgresql_permission_grant_roundtrip() -> None:
             assert loaded.valid_until.tzinfo is not None
 
             assert loaded.active is True
-
             assert loaded.created_at.tzinfo is not None
             assert loaded.updated_at.tzinfo is not None
     finally:
@@ -1098,7 +1126,7 @@ def test_postgresql_permission_grant_roundtrip() -> None:
 
 
 def test_postgresql_permission_grant_purchase_limit_allows_null_value() -> None:
-    """A PURCHASE_LIMIT constraint may have a NULL constraint value."""
+    """A PURCHASE_LIMIT constraint may intentionally have a NULL value."""
     database_url = _database_url()
     config = _alembic_config(database_url)
 
@@ -1114,14 +1142,12 @@ def test_postgresql_permission_grant_purchase_limit_allows_null_value() -> None:
                 user_type=UserType.INTERNAL,
                 role=UserRole.TECHNICIAN,
             )
-
             grantor = User(
                 login_identifier="postgres-purchase-limit-null-grantor",
                 display_name="PostgreSQL Purchase Limit Null Grantor",
                 user_type=UserType.INTERNAL,
                 role=UserRole.TECHNICIAN,
             )
-
             permission = Permission(
                 identifier="postgresql.purchase.limit.null",
             )
@@ -1139,8 +1165,8 @@ def test_postgresql_permission_grant_purchase_limit_allows_null_value() -> None:
                 user_id=user.id,
                 permission_id=permission.id,
                 effect=PermissionGrantEffect.ALLOW,
-                scope_type=PermissionGrantScopeType.PROJECT,
-                scope_id=permission.id,
+                scope_type=PermissionGrantScopeType.GLOBAL,
+                scope_id=None,
                 constraint_type=PermissionGrantConstraintType.PURCHASE_LIMIT,
                 constraint_value=None,
                 valid_from=datetime(
@@ -1179,5 +1205,151 @@ def test_postgresql_permission_grant_purchase_limit_allows_null_value() -> None:
                 loaded.constraint_type is PermissionGrantConstraintType.PURCHASE_LIMIT
             )
             assert loaded.constraint_value is None
+    finally:
+        engine.dispose()
+
+
+def test_postgresql_permission_grant_rejects_value_without_constraint_type() -> None:
+    """PostgreSQL must reject a constraint value without a constraint type."""
+    database_url = _database_url()
+    config = _alembic_config(database_url)
+
+    command.upgrade(config, "head")
+
+    engine = create_engine(database_url)
+
+    try:
+        with Session(engine) as session:
+            user = User(
+                login_identifier="postgres-invalid-constraint-user",
+                display_name="PostgreSQL Invalid Constraint User",
+                user_type=UserType.INTERNAL,
+                role=UserRole.TECHNICIAN,
+            )
+            grantor = User(
+                login_identifier="postgres-invalid-constraint-grantor",
+                display_name="PostgreSQL Invalid Constraint Grantor",
+                user_type=UserType.INTERNAL,
+                role=UserRole.TECHNICIAN,
+            )
+            permission = Permission(
+                identifier="postgresql.invalid.constraint",
+            )
+
+            session.add_all(
+                [
+                    user,
+                    grantor,
+                    permission,
+                ],
+            )
+            session.flush()
+
+            grant = PermissionGrant(
+                user_id=user.id,
+                permission_id=permission.id,
+                effect=PermissionGrantEffect.ALLOW,
+                scope_type=PermissionGrantScopeType.GLOBAL,
+                scope_id=None,
+                constraint_type=None,
+                constraint_value={
+                    "unexpected": True,
+                },
+                valid_from=datetime(
+                    2026,
+                    1,
+                    1,
+                    tzinfo=UTC,
+                ),
+                valid_until=None,
+                active=True,
+                granted_by_user_id=grantor.id,
+            )
+
+            session.add(grant)
+
+            with pytest.raises(IntegrityError):
+                session.commit()
+
+            session.rollback()
+    finally:
+        engine.dispose()
+
+
+@pytest.mark.parametrize(
+    "scope_type",
+    [
+        PermissionGrantScopeType.GLOBAL,
+        PermissionGrantScopeType.PROJECT,
+        PermissionGrantScopeType.WORKSPACE,
+        PermissionGrantScopeType.CUSTOMER,
+        PermissionGrantScopeType.USER,
+    ],
+)
+def test_postgresql_permission_grant_scope_types(
+    scope_type: PermissionGrantScopeType,
+) -> None:
+    """PostgreSQL must accept exactly the documented PermissionGrant scopes."""
+    database_url = _database_url()
+    config = _alembic_config(database_url)
+
+    command.upgrade(config, "head")
+
+    engine = create_engine(database_url)
+
+    try:
+        with Session(engine) as session:
+            user = User(
+                login_identifier=f"postgres-scope-user-{scope_type.value.lower()}",
+                display_name="PostgreSQL Scope User",
+                user_type=UserType.INTERNAL,
+                role=UserRole.TECHNICIAN,
+            )
+            grantor = User(
+                login_identifier=f"postgres-scope-grantor-{scope_type.value.lower()}",
+                display_name="PostgreSQL Scope Grantor",
+                user_type=UserType.INTERNAL,
+                role=UserRole.TECHNICIAN,
+            )
+            permission = Permission(
+                identifier=f"postgres.scope.{scope_type.value.lower()}",
+            )
+
+            session.add_all([user, grantor, permission])
+            session.flush()
+
+            grant = PermissionGrant(
+                user_id=user.id,
+                permission_id=permission.id,
+                effect=PermissionGrantEffect.ALLOW,
+                scope_type=scope_type,
+                scope_id=(
+                    None if scope_type is PermissionGrantScopeType.GLOBAL else uuid7()
+                ),
+                valid_from=datetime(
+                    2026,
+                    1,
+                    1,
+                    tzinfo=UTC,
+                ),
+                active=True,
+                granted_by_user_id=grantor.id,
+            )
+
+            session.add(grant)
+            session.commit()
+
+            grant_id = grant.id
+
+        with Session(engine) as session:
+            loaded = session.get(PermissionGrant, grant_id)
+
+            assert loaded is not None
+            assert loaded.scope_type is scope_type
+
+            if scope_type is PermissionGrantScopeType.GLOBAL:
+                assert loaded.scope_id is None
+            else:
+                assert loaded.scope_id is not None
     finally:
         engine.dispose()

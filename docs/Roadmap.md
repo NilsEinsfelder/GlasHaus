@@ -201,10 +201,10 @@ Finished:
 7. Customer Project Access
 8. Workspace
 9. Permission model <!-- PERSISTENCE_MODEL.md ## 10. -->
+10. Permission Grant <!-- PERSISTENCE_MODEL.md ## 11. -->
 
 To-Do:
 
-10. Permission Grant <!-- PERSISTENCE_MODEL.md ## 11. -->
 11. Device integration
 12. Session persistence foundation
 13. Audit Event

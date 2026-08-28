@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 from uuid import UUID, uuid7
 
 from sqlalchemy import JSON, CheckConstraint, DateTime, Enum, ForeignKey, Index
@@ -15,6 +15,11 @@ from app.db.models.base import Base, TimestampMixin
 if TYPE_CHECKING:
     from app.db.models.permission import Permission
     from app.db.models.user import User
+
+
+type JSONValue = (
+    None | bool | int | float | str | list["JSONValue"] | dict[str, "JSONValue"]
+)
 
 
 class PermissionGrantEffect(StrEnum):
@@ -30,7 +35,7 @@ class PermissionGrantScopeType(StrEnum):
     GLOBAL = "GLOBAL"
     PROJECT = "PROJECT"
     WORKSPACE = "WORKSPACE"
-    DOCUMENT = "DOCUMENT"
+    CUSTOMER = "CUSTOMER"
     USER = "USER"
 
 
@@ -51,7 +56,7 @@ class PermissionGrant(Base, TimestampMixin):
             name="ck_permission_grants_effect",
         ),
         CheckConstraint(
-            ("scope_type IN ('GLOBAL', 'PROJECT', 'WORKSPACE', 'DOCUMENT', 'USER')"),
+            ("scope_type IN ('GLOBAL', 'PROJECT', 'WORKSPACE', 'CUSTOMER', 'USER')"),
             name="ck_permission_grants_scope_type",
         ),
         CheckConstraint(
@@ -67,12 +72,13 @@ class PermissionGrant(Base, TimestampMixin):
             name="ck_permission_grants_valid_range",
         ),
         CheckConstraint(
-            (
-                "(constraint_type IS NULL AND constraint_value IS NULL) "
-                "OR "
-                "(constraint_type = 'PURCHASE_LIMIT' "
-                "AND constraint_value IS NOT NULL)"
-            ),
+            """
+            CASE
+                WHEN constraint_type IS NULL AND constraint_value IS NULL THEN 1
+                WHEN constraint_type = 'purchase_limit' THEN 1
+                ELSE 0
+            END
+            """,
             name="ck_permission_grants_constraint_consistency",
         ),
         Index(
@@ -128,6 +134,7 @@ class PermissionGrant(Base, TimestampMixin):
             native_enum=False,
             length=16,
             name="permissiongranteffect",
+            values_callable=lambda enum: [item.value for item in enum],
         ),
         nullable=False,
     )
@@ -138,6 +145,7 @@ class PermissionGrant(Base, TimestampMixin):
             native_enum=False,
             length=32,
             name="permissiongrantscopetype",
+            values_callable=lambda enum: [item.value for item in enum],
         ),
         nullable=False,
     )
@@ -152,12 +160,13 @@ class PermissionGrant(Base, TimestampMixin):
             native_enum=False,
             length=32,
             name="permissiongrantconstrainttype",
+            values_callable=lambda enum: [item.value for item in enum],
         ),
         nullable=True,
     )
 
-    constraint_value: Mapped[Any | None] = mapped_column(
-        JSON,
+    constraint_value: Mapped[JSONValue] = mapped_column(
+        JSON(none_as_null=True),
         nullable=True,
     )
 

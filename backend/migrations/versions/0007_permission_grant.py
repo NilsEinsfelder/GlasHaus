@@ -14,6 +14,7 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     """Create the permission grant table."""
+
     op.create_table(
         "permission_grants",
         sa.Column("id", sa.Uuid(), nullable=False),
@@ -41,7 +42,7 @@ def upgrade() -> None:
         ),
         sa.Column(
             "constraint_value",
-            sa.JSON(),
+            sa.JSON(none_as_null=True),
             nullable=True,
         ),
         sa.Column(
@@ -84,7 +85,7 @@ def upgrade() -> None:
         sa.CheckConstraint(
             (
                 "scope_type IN "
-                "('GLOBAL', 'PROJECT', 'WORKSPACE', 'DOCUMENT', 'USER')"
+                "('GLOBAL', 'PROJECT', 'WORKSPACE', 'CUSTOMER', 'USER')"
             ),
             name="ck_permission_grants_scope_type",
         ),
@@ -101,10 +102,13 @@ def upgrade() -> None:
             name="ck_permission_grants_valid_range",
         ),
         sa.CheckConstraint(
-            (
-                "constraint_type IS NOT NULL "
-                "OR constraint_value IS NULL"
-            ),
+            """
+            CASE
+                WHEN constraint_type IS NULL AND constraint_value IS NULL THEN 1
+                WHEN constraint_type = 'purchase_limit' THEN 1
+                ELSE 0
+            END
+            """,
             name="ck_permission_grants_constraint_consistency",
         ),
         sa.ForeignKeyConstraint(
@@ -130,25 +134,21 @@ def upgrade() -> None:
         "permission_grants",
         ["user_id"],
     )
-
     op.create_index(
         "ix_permission_grants_permission_id",
         "permission_grants",
         ["permission_id"],
     )
-
     op.create_index(
         "ix_permission_grants_granted_by_user_id",
         "permission_grants",
         ["granted_by_user_id"],
     )
-
     op.create_index(
         "ix_permission_grants_user_permission_active",
         "permission_grants",
         ["user_id", "permission_id", "active"],
     )
-
     op.create_index(
         "ix_permission_grants_scope_active",
         "permission_grants",
@@ -158,6 +158,7 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     """Drop the permission grant table."""
+
     op.drop_index(
         "ix_permission_grants_scope_active",
         table_name="permission_grants",
