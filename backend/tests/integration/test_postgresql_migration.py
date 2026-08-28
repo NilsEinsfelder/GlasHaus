@@ -69,6 +69,7 @@ def test_postgresql_migration_reaches_head() -> None:
             "external_relationships",
             "customer_project_accesses",
             "workspaces",
+            "permissions",
         }
     finally:
         engine.dispose()
