@@ -102,10 +102,8 @@ def upgrade() -> None:
         ),
         sa.CheckConstraint(
             (
-                "(constraint_type IS NULL AND constraint_value IS NULL) "
-                "OR "
-                "(constraint_type = 'purchase_limit' "
-                "AND constraint_value IS NOT NULL)"
+                "constraint_type IS NOT NULL "
+                "OR constraint_value IS NULL"
             ),
             name="ck_permission_grants_constraint_consistency",
         ),

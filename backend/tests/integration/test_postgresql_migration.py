@@ -1095,3 +1095,89 @@ def test_postgresql_permission_grant_roundtrip() -> None:
             assert loaded.updated_at.tzinfo is not None
     finally:
         engine.dispose()
+
+
+def test_postgresql_permission_grant_purchase_limit_allows_null_value() -> None:
+    """A PURCHASE_LIMIT constraint may have a NULL constraint value."""
+    database_url = _database_url()
+    config = _alembic_config(database_url)
+
+    command.upgrade(config, "head")
+
+    engine = create_engine(database_url)
+
+    try:
+        with Session(engine) as session:
+            user = User(
+                login_identifier="postgres-purchase-limit-null-user",
+                display_name="PostgreSQL Purchase Limit Null User",
+                user_type=UserType.INTERNAL,
+                role=UserRole.TECHNICIAN,
+            )
+
+            grantor = User(
+                login_identifier="postgres-purchase-limit-null-grantor",
+                display_name="PostgreSQL Purchase Limit Null Grantor",
+                user_type=UserType.INTERNAL,
+                role=UserRole.TECHNICIAN,
+            )
+
+            permission = Permission(
+                identifier="postgresql.purchase.limit.null",
+            )
+
+            session.add_all(
+                [
+                    user,
+                    grantor,
+                    permission,
+                ],
+            )
+            session.flush()
+
+            grant = PermissionGrant(
+                user_id=user.id,
+                permission_id=permission.id,
+                effect=PermissionGrantEffect.ALLOW,
+                scope_type=PermissionGrantScopeType.PROJECT,
+                scope_id=permission.id,
+                constraint_type=PermissionGrantConstraintType.PURCHASE_LIMIT,
+                constraint_value=None,
+                valid_from=datetime(
+                    2026,
+                    1,
+                    1,
+                    12,
+                    30,
+                    tzinfo=UTC,
+                ),
+                valid_until=datetime(
+                    2026,
+                    12,
+                    31,
+                    18,
+                    45,
+                    tzinfo=UTC,
+                ),
+                active=True,
+                granted_by_user_id=grantor.id,
+            )
+
+            session.add(grant)
+            session.commit()
+
+            grant_id = grant.id
+
+        with Session(engine) as session:
+            loaded = session.get(
+                PermissionGrant,
+                grant_id,
+            )
+
+            assert loaded is not None
+            assert (
+                loaded.constraint_type is PermissionGrantConstraintType.PURCHASE_LIMIT
+            )
+            assert loaded.constraint_value is None
+    finally:
+        engine.dispose()
