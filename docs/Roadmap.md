@@ -201,10 +201,10 @@ Finished:
 7. Customer Project Access
 8. Workspace
 9. Permission model <!-- PERSISTENCE_MODEL.md ## 10. -->
-10. Permission Grant <!-- PERSISTENCE_MODEL.md ## 11. -->
 
 To-Do:
 
+10. Permission Grant <!-- PERSISTENCE_MODEL.md ## 11. -->
 11. Device integration
 12. Session persistence foundation
 13. Audit Event
@@ -741,35 +741,20 @@ For security-sensitive changes, the affected trust boundary must be explicitly r
 The following rules are mandatory:
 
 1. Architecture precedes implementation.
-
 2. Persistence design precedes production domain models.
-
 3. Authentication precedes protected application workflows.
-
 4. Authorization must protect the first production workflow.
-
 5. Security architecture precedes sensitive-data implementation.
-
 6. Cryptographic design precedes cryptographic implementation.
-
 7. A concrete domain workflow precedes generic abstractions.
-
 8. A concrete offline workflow precedes generic synchronization infrastructure.
-
 9. Synchronization must not be designed as generic database replication.
-
 10. Authorization is always server-side.
-
 11. Offline authorization is bounded and is re-evaluated by the server during synchronization.
-
 12. Sensitive content must not be decrypted before authorization.
-
 13. Security guarantees are never claimed before implementation and testing.
-
 14. Federation must not be implemented before its trust model and protocol are explicitly designed.
-
 15. Each phase leaves the repository runnable and testable.
-
 16. Architectural conflicts stop implementation until explicitly resolved.
 
 ---

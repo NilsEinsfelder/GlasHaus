@@ -373,10 +373,6 @@ The MVP uses the following canonical permission identifiers.
 ### Customer
 
 
-customer.read
-customer.write
-
-
 `customer.read` allows reading customer information.
 
 `customer.write` allows creating and modifying customer information.
@@ -384,12 +380,7 @@ customer.write
 ### Project
 
 
-project.read
-project.write
-project.coordinate
-
-
-`project.read` allows reading project information.
+project.read` allows reading project information.
 
 `project.write` allows creating and modifying project information.
 
@@ -398,22 +389,12 @@ project.coordinate
 ### Purchasing
 
 
-purchase.create
-purchase.grant
-
-
 `purchase.create` allows creating purchases within the authorized scope.
 
-`purchase.grant` allows granting or delegating purchase authority to another principal, subject to the granting principal's own authority, scope, and constraints.
+`purchase.grant` if a user creates a purchase higher than the authorized scope, instead of not being able to purchase, the purchase has to be revisited. The Revisitor is able to grant the purchase, if within his own authorized scope.
 
-A purchase permission is not inherently limited to a project. The applicable scope determines whether the purchase is valid for a specific project, organizational overhead, or another supported purchasing context.
 
 ### Documents
-
-
-document.read
-document.write
-document.sign
 
 
 `document.read` allows reading documents within the authorized scope.
@@ -423,13 +404,6 @@ document.sign
 `document.sign` allows signing documents within the authorized scope.
 
 ### Scheduling
-
-
-schedule.view_availability
-schedule.view_details
-schedule.assignment_write
-schedule.assignment_request
-schedule.assignment_grant
 
 
 `schedule.view_availability` allows viewing scheduling availability without necessarily exposing the reason for an existing assignment.
@@ -445,48 +419,12 @@ schedule.assignment_grant
 ### User and Permission Management
 
 
-user.manage
-permission.manage
-
-
 `user.manage` allows managing users and their organizational authorization context within the authorized scope.
 
-`permission.manage` allows managing explicit permission grants and restrictions within the authorized scope and subject to delegation constraints.
-
-`permission.manage` does not constitute unrestricted authority to grant any permission to any principal.
-
-### Canonical MVP Permission Set
-
-The following identifiers are the complete canonical Permission set for the MVP:
-
-
-customer.read
-customer.write
-
-project.read
-project.write
-project.coordinate
-
-purchase.create
-purchase.grant
-
-document.read
-document.write
-document.sign
-
-schedule.view_availability
-schedule.view_details
-schedule.assignment_write
-schedule.assignment_request
-schedule.assignment_grant
-
-user.manage
-permission.manage
-
+`permission.manage` allows managing explicit permission grants and restrictions within the authorized scope and subject to delegation constraints. It does not constitute unrestricted authority to grant any permission to any principal.
 
 No additional Permission identifiers are part of the MVP unless explicitly added to this catalogue through an architecture decision.
 
-The Permission catalogue is application policy. Ordinary administrators must not create arbitrary new Permission types at runtime.
 
 ---
 
@@ -547,19 +485,7 @@ not:
 project.purchase_create
 
 
-The scope determines where the Permission applies:
-
-
-purchase.create
-scope = PROJECT:123
-
-
-or, where supported:
-
-
-purchase.create
-scope = ORGANIZATION
-
+The scope is determined within a specific PermissionGrant.
 
 The same principle applies to documents, projects, scheduling, users, and other resource domains.
 
@@ -568,17 +494,6 @@ The same principle applies to documents, projects, scheduling, users, and other 
 Some Permissions require additional constraints beyond a simple allow/deny decision.
 
 A constraint is not itself a Permission.
-
-For example, purchasing may use a financial limit:
-
-
-permission = purchase.create
-scope      = PROJECT:123
-constraint:
-    purchase_limit = 2000 EUR
-
-
-`purchase_limit` is therefore a constraint on `purchase.create`, not a separate Permission such as `purchase.limit`.
 
 A constraint may be `None` where the applicable policy defines no additional limit.
 

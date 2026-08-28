@@ -16,11 +16,11 @@ Die Entscheidungen ergänzen die bestehenden autoritativen Dokumente. Sie ersetz
 
 ---
 
-## ADR-001 — Sprint B implementiert nur das Core Persistence Model
+## ADR-001 — Sprint B implementiert das Core Persistence Model
 
 ### Status
 
-Accepted
+Abgeschlossen
 
 ### Entscheidung
 
@@ -54,15 +54,13 @@ Die ersten fünf Entitäten bilden das minimale stabile Domänenfundament für U
 
 Die späteren Entitäten hängen fachlich von weiteren Architekturentscheidungen zu Authentication, Authorization, Workspaces, Documents und konkreten Workflows ab.
 
-Sprint B soll daher das bestehende Fundament stabilisieren, statt bereits zukünftige Fachlogik vorwegzunehmen.
-
 ---
 
 ## ADR-002 — Employment stellt keine Customer-Beziehung dar
 
 ### Status
 
-Accepted
+Abgeschlossen
 
 ### Entscheidung
 
@@ -97,15 +95,9 @@ Project
 
 `ExternalRelationship.created_from` wird als Fremdschlüssel persistiert zu `users.id`.
 
-Die Persistenz garantert, dass der referenzierte Nutzer existiert.
+Die Persistenz garantiert, dass der referenzierte Nutzer existiert.
 
-Die Anforderung, dass `created_from` einen Nutzer mit dem Typ
-`UserType.INTERNAL` voraussetzt ist eine authorization/business Regel und DARF NICHT
-allein als persistence-layer foreign-key constraint eingeführt werden.
-
-Die authorization layer MUSS validieren, dass der erstellenede Nutzer den Typ
-`INTERNAL` hat und zum Anlegen einer `ExternalRelationship` berechtigt ist, bevor diese
-erstellt wird.
+Die authorization layer MUSS validieren, dass der erstellenede Nutzer zum Anlegen einer `ExternalRelationship` berechtigt ist, bevor diese erstellt wird. Voraussetzung dafür ist unter anderem, dass der User einen gültigen PermissionGrant für diese Tätigkeit hat.
 
 ### Begründung
 
@@ -127,7 +119,7 @@ Accepted
 
 ### Entscheidung
 
-Nach Sprint B wird keine generische Synchronisationsengine als unmittelbarer nächster Entwicklungsschritt implementiert.
+Es wird keine generische Synchronisationsengine als unmittelbarer nächster Entwicklungsschritt implementiert.
 
 Insbesondere werden vor einem konkreten Offline-Workflow nicht vorschnell implementiert:
 
@@ -177,9 +169,7 @@ Accepted
 
 ### Entscheidung
 
-Sprint B implementiert keine Authentication und keine Authorization Engine.
-
-Die Reihenfolge bleibt:
+Die Reihenfolge ist:
 
 
 Core Persistence
@@ -340,7 +330,7 @@ Eine zusätzliche UUID-Library wäre für Sprint B nicht erforderlich und würde
 
 ## Geltungsbereich
 
-Diese Entscheidungen gelten ab ihrer Aufnahme in das Repository für die weitere Sprint-B-Implementierung.
+Diese Entscheidungen gelten ab ihrer Aufnahme in das Repository für die weitere Implementierung.
 
 Sollte eine spätere Architekturentscheidung eine dieser Entscheidungen ändern, muss zuerst die autoritative Dokumentation aktualisiert werden.
 

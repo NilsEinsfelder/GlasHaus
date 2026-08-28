@@ -35,31 +35,18 @@ It does not imply that every entity or capability is already implemented.
 GlasHaus follows these persistence principles:
 
 1. The local GlasHaus server is the organizational boundary.
-
 2. Normal local records do not require a tenant `organization_id`.
-
 3. Stable identifiers are used for all persistent domain entities.
-
 4. Important domain relationships are represented explicitly.
-
 5. Foreign keys enforce structural relationships wherever practical.
-
 6. Security-sensitive relationships must not be represented only through implicit conventions.
-
 7. Historical state must not be destroyed merely to represent current state.
-
 8. Security-relevant identities and relationships should normally be deactivated rather than physically deleted when historical references are required.
-
 9. Production schema changes are performed through Alembic migrations.
-
 10. Binary content is stored outside the relational database.
-
 11. Encryption metadata may be persisted, but secret production key material is not stored alongside ciphertext.
-
 12. Synchronization metadata remains separate from core domain semantics.
-
 13. Persistence is not an authorization mechanism.
-
 14. Database relationships must never be interpreted as authorization grants by themselves.
 
 ---
@@ -143,10 +130,6 @@ Every User has exactly one:
 The role represents the user's current functional responsibility.
 
 The role catalogue is controlled by application policy and is not an arbitrary collection of administrator-created roles.
-
-There is no persisted `age` field.
-
-Age is derived from `date_of_birth` and the current evaluation date.
 
 Authentication credentials are modeled separately from the core identity.
 
@@ -415,6 +398,7 @@ A grant or restriction must be:
 Possible scope types include:
 
 * `GLOBAL`
+* `CUSTOMER`
 * `PROJECT`
 * `WORKSPACE`
 * `DOCUMENT`
@@ -431,8 +415,6 @@ A persisted grant is therefore not automatically an effective authorization deci
 
 Some Permissions may carry additional constraints.
 
-A constraint is not itself a Permission.
-
 For example, purchasing may use a financial purchase limit:
 
 permission = purchase.create
@@ -443,7 +425,11 @@ The MVP therefore uses the PermissionGrants constraint_types:
 * `purchase_limit`
 * `None`
 
-The exact representation of monetary values in `constraint_value` must use a lossless monetary representation and must not use floating-point storage.
+If constraint_type is `None` the constraint_value has to be `None` too.
+
+If constraint_type is `purchase_limit` the constraint_value can be a a lossless monetary representation or `None`. The latter means, that unlimited purchasing is granted. It makes sure, that the unlimited grant is intentionally made.
+
+`constraint_value` is formatted as a json Container for different values, since there may exist non-monetary constraints in the future.
 
 Grant constraints must be evaluated by the authorization layer whenever the protected operation is executed.
 
@@ -464,17 +450,6 @@ Delegation must therefore be constrained by:
 * applicable policy restrictions
 * any temporal validity of the grant
 
-For example, a principal with:
-
-permission = purchase.create
-scope = PROJECT:123
-purchase_limit = 2000 EUR
-
-must not be able to delegate:
-
-permission = purchase.create
-scope = PROJECT:123
-purchase_limit = None
 
 unless the principal independently possesses sufficient authority to delegate that broader purchasing capability.
 
@@ -921,65 +896,7 @@ Every synchronized resource remains subject to the same authorization semantics 
 
 ---
 
-## 26. Purchasing Scope
-
-Purchasing is modeled as a separate capability domain.
-
-The canonical purchasing Permissions are:
-
-purchase.create
-purchase.grant
-
-Purchasing Permissions are scoped independently from the Permission identifier.
-
-A project purchase may therefore be authorized as:
-
-permission = purchase.create
-scope = PROJECT:123
-
-The architecture must also support purchases that are not associated with a Customer Project.
-
-Such purchases represent organizational or overhead spending and must not require an artificial Project such as `Office` or `Warehouse`.
-
-A future Purchase domain model may therefore allow:
-
-Purchase
-├── id
-├── project_id
-├── organizational_scope
-├── created_from
-├── amount
-└── ...
-
-For a project purchase:
-
-project_id = Project.id
-
-For a non-project purchase:
-
-project_id = NULL
-
-A `NULL` project reference represents a purchase that is not attributable to a Customer Project.
-
-The exact organizational scope for non-project purchases will be defined when the Purchase domain is implemented.
-
-Project-scoped purchasing must remain possible independently of organization-wide purchasing.
-
-A User may therefore be authorized to create purchases for a specific Project without automatically receiving authority to create general organizational purchases.
-
-A future Purchase implementation must also preserve the distinction between:
-
-* the Permission `purchase.create`
-* the purchase scope
-* the purchase amount
-* any applicable `purchase_limit`
-* the authority of the principal creating or granting the purchase permission
-
-An artificial Project such as `Office` or `Warehouse` must not be introduced solely to represent organizational overhead purchases.
-
----
-
-## 27. Principal Relationships
+## 26. Principal Relationships
 
 The principal persistence relationships are:
 
@@ -1018,8 +935,7 @@ Important domain relationships must use database foreign keys.
 Examples include:
 
 * Employment → User
-* ExternalRelationship → User
-* ExternalRelationship → Customer where applicable
+* ExternalRelationship → User/Customer <!-- Supplier, etc. after MVP stage -->
 * Project → Customer
 * ProjectAssignment → Project/User
 * CustomerProjectAccess → Project/User
@@ -1028,8 +944,7 @@ Examples include:
 * DocumentVersion → Document
 * Device → User
 * Session → User/Device where applicable
-* PermissionGrant → User
-* PermissionGrant → granting User where applicable
+* PermissionGrant → User/granting User
 * AuditEvent → actor User where applicable
 
 Application validation complements database constraints but does not replace them.
@@ -1295,7 +1210,7 @@ The following persistence invariants must remain true unless this architecture i
 13. Customer project access requires both the applicable Customer relationship and explicit project access.
 14. Workspace type is a security boundary.
 15. Internal and Customer Workspaces remain separate.
-16. Documents belong to a Project and Workspace. # needs to be revisited, since granted vacations, paychecks, etc. are documents too, not belonging to a Project. 
+16. Documents belong to a Project and Workspace. <!-- needs to be revisited, since granted vacations, paychecks, etc. are documents too, not belonging to a Project. --> 
 17. Document versions are immutable historical resources.
 18. Permission grants and restrictions are explicit and scoped.
 19. Persisted permission grants do not bypass authorization policy.
