@@ -75,9 +75,6 @@ def test_postgresql_migration_reaches_head() -> None:
             "workspaces",
             "permissions",
             "permission_grants",
-            "permission_grant_constraints",
-            "permission_grant_effects",
-            "permission_grant_scopes",
         }
     finally:
         engine.dispose()
@@ -1025,7 +1022,7 @@ def test_postgresql_permission_grant_roundtrip() -> None:
             )
 
             permission = Permission(
-                identifier="purchase.create",
+                identifier="postgresql.purchase.create",
             )
 
             session.add_all(
