@@ -8,6 +8,12 @@ from app.db.models.external_relationship import (
     ExternalRelationshipType,
 )
 from app.db.models.permission import Permission
+from app.db.models.permission_grant import (
+    PermissionGrant,
+    PermissionGrantConstraintType,
+    PermissionGrantEffect,
+    PermissionGrantScopeType,
+)
 from app.db.models.project import Project
 from app.db.models.project_assignment import ProjectAssignment
 from app.db.models.sync_state import SyncState, SyncStatus
@@ -25,6 +31,10 @@ __all__ = [
     "ExternalRelationship",
     "ExternalRelationshipType",
     "Permission",
+    "PermissionGrant",
+    "PermissionGrantConstraintType",
+    "PermissionGrantEffect",
+    "PermissionGrantScopeType",
     "Project",
     "ProjectAssignment",
     "SyncState",

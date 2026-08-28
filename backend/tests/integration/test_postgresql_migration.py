@@ -15,6 +15,10 @@ from app.db.models import (
     ExternalRelationship,
     ExternalRelationshipType,
     Permission,
+    PermissionGrant,
+    PermissionGrantConstraintType,
+    PermissionGrantEffect,
+    PermissionGrantScopeType,
     Project,
     ProjectAssignment,
     User,
@@ -70,6 +74,10 @@ def test_postgresql_migration_reaches_head() -> None:
             "customer_project_accesses",
             "workspaces",
             "permissions",
+            "permission_grants",
+            "permission_grant_constraints",
+            "permission_grant_effects",
+            "permission_grant_scopes",
         }
     finally:
         engine.dispose()
@@ -871,5 +879,222 @@ def test_postgresql_permission_roundtrip() -> None:
             assert loaded is not None
             assert loaded.id == permission_id
             assert loaded.identifier == "test.permission.roundtrip"
+    finally:
+        engine.dispose()
+
+
+def test_postgresql_permission_grant_schema() -> None:
+    """PostgreSQL must create the PermissionGrant schema correctly."""
+    database_url = _database_url()
+    config = _alembic_config(database_url)
+
+    command.upgrade(config, "head")
+
+    engine = create_engine(database_url)
+
+    try:
+        inspector = inspect(engine)
+
+        columns = {
+            column["name"]: column
+            for column in inspector.get_columns("permission_grants")
+        }
+
+        assert set(columns) == {
+            "id",
+            "user_id",
+            "permission_id",
+            "effect",
+            "scope_type",
+            "scope_id",
+            "constraint_type",
+            "constraint_value",
+            "valid_from",
+            "valid_until",
+            "active",
+            "granted_by_user_id",
+            "created_at",
+            "updated_at",
+        }
+
+        assert columns["id"]["nullable"] is False
+        assert columns["user_id"]["nullable"] is False
+        assert columns["permission_id"]["nullable"] is False
+        assert columns["effect"]["nullable"] is False
+        assert columns["scope_type"]["nullable"] is False
+        assert columns["scope_id"]["nullable"] is True
+        assert columns["constraint_type"]["nullable"] is True
+        assert columns["constraint_value"]["nullable"] is True
+        assert columns["valid_from"]["nullable"] is False
+        assert columns["valid_until"]["nullable"] is True
+        assert columns["active"]["nullable"] is False
+        assert columns["granted_by_user_id"]["nullable"] is False
+        assert columns["created_at"]["nullable"] is False
+        assert columns["updated_at"]["nullable"] is False
+
+        foreign_keys = inspector.get_foreign_keys(
+            "permission_grants",
+        )
+
+        foreign_key_map = {
+            tuple(foreign_key["constrained_columns"]): foreign_key
+            for foreign_key in foreign_keys
+        }
+
+        user_foreign_key = foreign_key_map[("user_id",)]
+        assert user_foreign_key["referred_table"] == "users"
+        assert user_foreign_key["referred_columns"] == ["id"]
+        assert user_foreign_key["options"]["ondelete"] == "RESTRICT"
+
+        permission_foreign_key = foreign_key_map[("permission_id",)]
+        assert permission_foreign_key["referred_table"] == "permissions"
+        assert permission_foreign_key["referred_columns"] == ["id"]
+        assert permission_foreign_key["options"]["ondelete"] == "RESTRICT"
+
+        granted_by_foreign_key = foreign_key_map[("granted_by_user_id",)]
+        assert granted_by_foreign_key["referred_table"] == "users"
+        assert granted_by_foreign_key["referred_columns"] == ["id"]
+        assert granted_by_foreign_key["options"]["ondelete"] == "RESTRICT"
+
+        indexes = inspector.get_indexes("permission_grants")
+        index_names = {index["name"] for index in indexes}
+
+        assert {
+            "ix_permission_grants_user_id",
+            "ix_permission_grants_permission_id",
+            "ix_permission_grants_granted_by_user_id",
+            "ix_permission_grants_user_permission_active",
+            "ix_permission_grants_scope_active",
+        }.issubset(index_names)
+
+        for column_name in (
+            "valid_from",
+            "valid_until",
+            "created_at",
+            "updated_at",
+        ):
+            column_type = columns[column_name]["type"]
+
+            assert isinstance(column_type, TIMESTAMP)
+            assert column_type.timezone is True
+    finally:
+        engine.dispose()
+
+
+def test_postgresql_permission_grant_roundtrip() -> None:
+    """A PermissionGrant must survive a PostgreSQL roundtrip."""
+    database_url = _database_url()
+    config = _alembic_config(database_url)
+
+    command.upgrade(config, "head")
+
+    engine = create_engine(database_url)
+
+    valid_from = datetime(
+        2026,
+        1,
+        1,
+        12,
+        30,
+        tzinfo=UTC,
+    )
+
+    valid_until = datetime(
+        2026,
+        12,
+        31,
+        18,
+        45,
+        tzinfo=UTC,
+    )
+
+    try:
+        with Session(engine) as session:
+            user = User(
+                login_identifier="postgres-permission-grant-user",
+                display_name="PostgreSQL Permission Grant User",
+                user_type=UserType.INTERNAL,
+                role=UserRole.TECHNICIAN,
+            )
+
+            grantor = User(
+                login_identifier="postgres-permission-grant-grantor",
+                display_name="PostgreSQL Permission Grant Grantor",
+                user_type=UserType.INTERNAL,
+                role=UserRole.TECHNICIAN,
+            )
+
+            permission = Permission(
+                identifier="purchase.create",
+            )
+
+            session.add_all(
+                [
+                    user,
+                    grantor,
+                    permission,
+                ],
+            )
+            session.flush()
+
+            grant = PermissionGrant(
+                user_id=user.id,
+                permission_id=permission.id,
+                effect=PermissionGrantEffect.ALLOW,
+                scope_type=PermissionGrantScopeType.PROJECT,
+                scope_id=permission.id,
+                constraint_type=PermissionGrantConstraintType.PURCHASE_LIMIT,
+                constraint_value={
+                    "amount": "2000.50",
+                    "currency": "EUR",
+                },
+                valid_from=valid_from,
+                valid_until=valid_until,
+                active=True,
+                granted_by_user_id=grantor.id,
+            )
+
+            session.add(grant)
+            session.commit()
+
+            grant_id = grant.id
+            user_id = user.id
+            grantor_id = grantor.id
+            permission_id = permission.id
+
+        with Session(engine) as session:
+            loaded = session.get(
+                PermissionGrant,
+                grant_id,
+            )
+
+            assert loaded is not None
+            assert loaded.user_id == user_id
+            assert loaded.permission_id == permission_id
+            assert loaded.granted_by_user_id == grantor_id
+
+            assert loaded.effect is PermissionGrantEffect.ALLOW
+            assert loaded.scope_type is PermissionGrantScopeType.PROJECT
+            assert loaded.scope_id == permission_id
+
+            assert (
+                loaded.constraint_type is PermissionGrantConstraintType.PURCHASE_LIMIT
+            )
+
+            assert loaded.constraint_value == {
+                "amount": "2000.50",
+                "currency": "EUR",
+            }
+
+            assert loaded.valid_from == valid_from
+            assert loaded.valid_from.tzinfo is not None
+
+            assert loaded.valid_until == valid_until
+            assert loaded.valid_until.tzinfo is not None
+
+            assert loaded.active is True
+
+            assert loaded.created_at.tzinfo is not None
+            assert loaded.updated_at.tzinfo is not None
     finally:
         engine.dispose()

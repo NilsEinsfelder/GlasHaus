@@ -23,6 +23,7 @@ FULL_SCHEMA_TABLES = {
     "employments",
     "customers",
     "permissions",
+    "permission_grants",
     "projects",
     "project_assignments",
     "external_relationships",
@@ -83,6 +84,52 @@ def test_alembic_upgrade_and_downgrade(
 
     try:
         assert set(inspect(engine).get_table_names()) == FULL_SCHEMA_TABLES
+    finally:
+        engine.dispose()
+
+    get_settings.cache_clear()
+
+
+def test_permission_grant_migration(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """The PermissionGrant migration must create and remove its table."""
+    database_url = f"sqlite:///{tmp_path / 'permission-grant-migration-test.db'}"
+    monkeypatch.setenv("DATABASE_URL", database_url)
+
+    from app.core.config import get_settings
+
+    get_settings.cache_clear()
+
+    config = Config(str(ALEMBIC_CONFIG_PATH))
+
+    command.upgrade(config, "0006_permission")
+
+    engine = create_engine(database_url)
+
+    try:
+        assert "permissions" in inspect(engine).get_table_names()
+        assert "permission_grants" not in inspect(engine).get_table_names()
+    finally:
+        engine.dispose()
+
+    command.upgrade(config, "0007_permission_grant")
+
+    engine = create_engine(database_url)
+
+    try:
+        assert "permission_grants" in inspect(engine).get_table_names()
+    finally:
+        engine.dispose()
+
+    command.downgrade(config, "0006_permission")
+
+    engine = create_engine(database_url)
+
+    try:
+        assert "permission_grants" not in inspect(engine).get_table_names()
+        assert "permissions" in inspect(engine).get_table_names()
     finally:
         engine.dispose()
 
